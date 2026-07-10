@@ -1908,8 +1908,8 @@ body.modal-open .overlay{touch-action:auto}
       </div>
       <div id="sync-log" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;scrollbar-width:thin"></div>
       <div style="border-top:1px solid rgba(255,255,255,.08);margin-top:12px;padding-top:10px;display:flex;gap:6px">
-        <button onclick="fbPush();addSyncLog('manual','Sincronização forçada')" style="flex:1;padding:7px;background:rgba(0,232,122,.15);border:1px solid rgba(0,232,122,.3);border-radius:8px;color:#00E87A;font-size:11px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif">
-          <i class="ti ti-refresh" style="font-size:11px"></i> Forçar sync
+        <button id="force-sync-btn" onclick="if(_syncUrl){forceSync();}else{addSyncLog('error','Sem conexão com Firebase');}" style="flex:1;padding:7px;background:rgba(0,232,122,.15);border:1px solid rgba(0,232,122,.3);border-radius:8px;color:#00E87A;font-size:11px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif">
+          <i class="ti ti-refresh" style="font-size:12px"></i> Re-sincronizar tudo
         </button>
         <button onclick="openFbSetup()" style="flex:1;padding:7px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.6);font-size:11px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif">
           <i class="ti ti-settings" style="font-size:11px"></i> Configurar
@@ -2352,7 +2352,7 @@ function save(){
       terceirizados:Object.fromEntries(THIRD_SECS.map(s=>[s.key,(S.terceirizados[s.key]||[]).map(j=>({...j,file:null}))])),
       audiovisual:S.audiovisual.map(a=>({...a,file:null})),
       // KV e Joey armazenados separadamente para não estourar quota
-      clients:(S.clients||[]).map(c=>({...c,kv:null,joey:null})),
+      clients:(S.clients||[]).map(c=>({...c,kv:null,joey:null,updatedAt:c.updatedAt||new Date().toISOString()})),
     };
     localStorage.setItem('ag9',JSON.stringify(lite));
     // Armazena KV e Joey por cliente em chaves separadas
@@ -2367,7 +2367,23 @@ function save(){
     S.lancamentos.forEach(l=>DELIVERABLES.forEach(d=>{const f=l.delivs[d.key]?.file;if(f)localStorage.setItem(`ag9-lf-${l.id}-${d.key}`,JSON.stringify(f));else localStorage.removeItem(`ag9-lf-${l.id}-${d.key}`);}));
     S.audiovisual.forEach(a=>{if(a.file)localStorage.setItem(`ag9-av-${a.id}`,JSON.stringify(a.file));else localStorage.removeItem(`ag9-av-${a.id}`);});
     S.onboarding.forEach(o=>{if(o.file)localStorage.setItem(`ag9-ob-${o.id}`,JSON.stringify(o.file));else localStorage.removeItem(`ag9-ob-${o.id}`);});
-  }catch(e){console.warn(e);addSyncLog('error','Erro ao salvar localmente');}
+  }catch(e){
+    console.warn(e);
+    if(e.name==='QuotaExceededError'||e.code===22){
+      addSyncLog('error','⚠️ Armazenamento local cheio! Alguns arquivos grandes podem estar ocupando espaço. Contate o administrador.');
+      // Tenta liberar espaço removendo caches antigos
+      try{
+        ['ag9-dem','ag9-cal'].forEach(k=>{/* mantém */});
+        // Remove previews de arquivos grandes se existirem
+        Object.keys(localStorage).filter(k=>k.startsWith('ag9-kv-')||k.startsWith('ag9-joey-')).forEach(k=>{
+          const v=localStorage.getItem(k);
+          if(v&&v.length>500000) localStorage.removeItem(k); // remove se >500KB
+        });
+      }catch(e2){}
+    }else{
+      addSyncLog('error','Erro ao salvar localmente: '+e.message);
+    }
+  }
   if(_syncUrl){
     addSyncLog('save','Salvo localmente');
     fbPush();
@@ -3180,7 +3196,9 @@ function setCliFilter(type,id){
 function renderClients(){
   buildCliFilterBar();
   const f=S.cliFilter;
-  const FL=f?S.clients.filter(c=>c[f.type+'Id']===f.id):S.clients;
+  // Exclui clientes marcados como deletados (propagação em andamento)
+  const _active=(S.clients||[]).filter(c=>!c._deleted);
+  const FL=f?_active.filter(c=>c[f.type+'Id']===f.id):_active;
   const n=FL.length;
   let label;
   if(f){
@@ -3431,12 +3449,26 @@ function rmCliFile(id,field){
   cl[field]=null;save();renderClients();
 }
 
-function commitCliName(id){const inp=document.getElementById(`cn-${id}`);if(!inp)return;const v=inp.value.trim();const c=S.clients.find(x=>x.id===id);if(c&&v){c.name=v;syncClientsToRec();}S.editCliName=null;save();renderClients();}
+function commitCliName(id){const inp=document.getElementById(`cn-${id}`);if(!inp)return;const v=inp.value.trim();const c=S.clients.find(x=>x.id===id);if(c&&v){c.name=v;syncClientsToRec();}S.editCliName=null;c.updatedAt=new Date().toISOString();save();renderClients();}
 function cliNameKey(e,id){if(e.key==='Enter'){e.preventDefault();commitCliName(id);}if(e.key==='Escape'){S.editCliName=null;renderClients();}}
-function commitCliObs(id){const ta=document.getElementById(`co-${id}`);if(!ta)return;const c=S.clients.find(x=>x.id===id);if(c)c.obs=ta.value.trim();S.editCliObs=null;save();renderClients();}
-function setBlk(id,b){const c=S.clients.find(x=>x.id===id);if(!c)return;c.block=c.block===b?null:b;syncClientsToRec();save();renderClients();if(S.tab==='financeiro')renderFin();}
-function setSt(id,st){const c=S.clients.find(x=>x.id===id);if(c){const lbl={normal:'Normal',atencao:'Atenção',critico:'Crítico'}[st]||st;c.status=st;save();renderClients();notifBroadcastClient(c,'client_status',lbl);}}
-function delCli(id){const c=S.clients.find(x=>x.id===id);const nm=c?.name||'Cliente';S.clients=S.clients.filter(x=>x.id!==id);syncClientsToRec();save();renderClients();notifBroadcastClient({id,name:nm},'client_removed','');}
+function commitCliObs(id){const ta=document.getElementById(`co-${id}`);if(!ta)return;const c=S.clients.find(x=>x.id===id);if(c)c.obs=ta.value.trim();S.editCliObs=null;c.updatedAt=new Date().toISOString();save();renderClients();}
+function setBlk(id,b){const c=S.clients.find(x=>x.id===id);if(!c)return;c.block=c.block===b?null:b;syncClientsToRec();c.updatedAt=new Date().toISOString();save();renderClients();if(S.tab==='financeiro')renderFin();}
+function setSt(id,st){const c=S.clients.find(x=>x.id===id);if(c){const lbl={normal:'Normal',atencao:'Atenção',critico:'Crítico'}[st]||st;c.status=st;c.updatedAt=new Date().toISOString();save();renderClients();notifBroadcastClient(c,'client_status',lbl);}}
+function delCli(id){
+  const c=S.clients.find(x=>x.id===id);if(!c)return;
+  const nm=c.name||'Cliente';
+  // Marca como deletado com timestamp — fbMergeClients propaga para outros usuários
+  c._deleted=true;
+  c.updatedAt=new Date().toISOString();
+  save();
+  // Após salvar e propagar via Firebase, remove da memória local
+  setTimeout(()=>{
+    S.clients=S.clients.filter(x=>x.id!==id);
+    syncClientsToRec();
+    renderClients();
+  },1500);
+  notifBroadcastClient({id,name:nm},'client_removed','');
+}
 
 /* ══════ ONBOARDING ══════ */
 function renderOnboarding(){
@@ -4444,6 +4476,7 @@ function doAddCli(){
     gtIds:[...(document.getElementById('mi6m')?.selectedOptions||[])].map(o=>parseInt(o.value)).filter(Boolean),
     edIds:[...(document.getElementById('mi7m')?.selectedOptions||[])].map(o=>parseInt(o.value)).filter(Boolean),
     obs:document.getElementById('mi5').value.trim(),status:'normal',block:null,
+    updatedAt:new Date().toISOString(),
     traffic:{lastCreative:'',links:[],ideas:'',obs:''}});
   syncClientsToRec();closeM();save();renderClients();
   notifBroadcastClient({id,name},'client_added','');
@@ -4455,6 +4488,7 @@ function doEditCli(id){
   c.vmIds=[...(document.getElementById('mi3m')?.selectedOptions||[])].map(o=>parseInt(o.value)).filter(Boolean);
   c.gtIds=[...(document.getElementById('mi4m')?.selectedOptions||[])].map(o=>parseInt(o.value)).filter(Boolean);
   c.edIds=[...(document.getElementById('mi5m')?.selectedOptions||[])].map(o=>parseInt(o.value)).filter(Boolean);
+  c.updatedAt=new Date().toISOString();
   closeM();save();renderClients();if(S.tab==='trafego')renderTrafego();
   notifBroadcastClient(c,'client_updated','Dados atualizados');
 }
@@ -4610,21 +4644,23 @@ let CAL={year:new Date().getFullYear(),month:new Date().getMonth(),diarias:[],su
 
 function demSave(){
   try{localStorage.setItem('ag9-dem',JSON.stringify(DEM.tasks));addSyncLog('save',`Demandas salvas (${DEM.tasks.length} tarefas)`);}catch(e){addSyncLog('error','Erro ao salvar demandas: '+e.message);}
-  if(_syncUrl){demPush();fbPush();}else{_pendingSync=true;addSyncLog('pending','Demandas pendentes — sem conexão');fbSetStatus('offline','Salvo localmente — aguardando conexão');}
+  // demPush envia APENAS demandas para /demTasks — não toca em clients nem em mais nada
+  // fbPush NÃO é chamado aqui para não re-enviar clients com versão desatualizada
+  if(_syncUrl){demPush();}else{_pendingSync=true;addSyncLog('pending','Demandas pendentes — sem conexão');fbSetStatus('offline','Salvo localmente — aguardando conexão');}
 }
 
 /* Envia demandas para /demTasks no Firebase como objeto {id: task}
    O PATCH por chave nunca apaga demandas de outros usuários — só atualiza as enviadas */
 let _demPushTimer=null;
+let _demPending=false; // demandas com sync pendente
 function demPush(){
-  if(!_syncUrl) return;
+  if(!_syncUrl){ _demPending=true; return; }
   clearTimeout(_demPushTimer);
   _demPushTimer=setTimeout(async()=>{
     if(!_syncUrl||!DEM.tasks.length) return;
     try{
       await ensureToken();
-      if(!_idToken) return;
-      // Converte array em objeto {id: task} para PATCH seguro
+      if(!_idToken){ _demPending=true; return; }
       const obj={};
       DEM.tasks.forEach(t=>{ obj[t.id]=t; });
       const res=await fetch(withAuth(_syncUrl+'/demTasks.json'),{
@@ -4633,39 +4669,58 @@ function demPush(){
         body:JSON.stringify(obj),
       });
       if(res.ok){
+        _demPending=false;
         addSyncLog('sync','Demandas salvas no Firebase ('+DEM.tasks.length+')');
       }else{
-        addSyncLog('error','Erro ao salvar demandas no Firebase: '+res.status);
+        _demPending=true;
+        addSyncLog('error','Erro ao salvar demandas: '+res.status+' — tentando em 15s');
+        setTimeout(()=>{ if(_syncUrl&&_demPending) demPush(); },15000);
       }
     }catch(e){
-      addSyncLog('error','demPush falhou: '+e.message);
+      _demPending=true;
+      addSyncLog('error','demPush offline — tentando em 15s');
+      setTimeout(()=>{ if(_syncUrl&&_demPending) demPush(); },15000);
     }
   },800);
 }
 function calSave(){
   try{localStorage.setItem('ag9-cal',JSON.stringify(CAL.diarias));addSyncLog('save',`Diárias salvas (${CAL.diarias.length})`);}catch(e){addSyncLog('error','Erro ao salvar diárias: '+e.message);}
-  if(_syncUrl){calPush();fbPush();}else{_pendingSync=true;addSyncLog('pending','Diárias pendentes — sem conexão');fbSetStatus('offline','Salvo localmente — aguardando conexão');}
+  // calPush envia APENAS diárias para /diarias — não toca em clients
+  if(_syncUrl){calPush();}else{_pendingSync=true;addSyncLog('pending','Diárias pendentes — sem conexão');fbSetStatus('offline','Salvo localmente — aguardando conexão');}
 }
 
 /* Envia diárias para /diarias no Firebase como objeto {id: diaria} */
 let _calPushTimer=null;
+let _calPending=false; // diárias com sync pendente
 function calPush(){
-  if(!_syncUrl||!CAL.diarias.length) return;
+  if(!_syncUrl){ _calPending=true; return; }
+  if(!CAL.diarias.length) return;
   clearTimeout(_calPushTimer);
   _calPushTimer=setTimeout(async()=>{
-    if(!_syncUrl||!_idToken) return;
+    if(!_syncUrl) return;
     try{
       await ensureToken();
+      if(!_idToken){ _calPending=true; return; }
       const obj={};
-      CAL.diarias.forEach(d=>{ obj[d.id]={...d,files:[]}; }); // sem files (grandes demais)
+      CAL.diarias.forEach(d=>{ obj[d.id]={...d,files:[]}; });
       const res=await fetch(withAuth(_syncUrl+'/diarias.json'),{
         method:'PATCH', mode:'cors', cache:'no-store',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(obj),
       });
-      if(res.ok) addSyncLog('sync','Diárias salvas no Firebase');
-      else addSyncLog('error','Erro diárias Firebase: '+res.status);
-    }catch(e){ addSyncLog('error','calPush falhou: '+e.message); }
+      if(res.ok){
+        _calPending=false;
+        addSyncLog('sync','Diárias salvas no Firebase');
+      }else{
+        _calPending=true;
+        addSyncLog('error','Erro diárias Firebase: '+res.status+' — tentando em 15s');
+        setTimeout(()=>{ if(_syncUrl&&_calPending) calPush(); },15000);
+      }
+    }catch(e){
+      _calPending=true;
+      addSyncLog('error','calPush offline — tentando em 15s');
+      setTimeout(()=>{ if(_syncUrl&&_calPending) calPush(); },15000);
+    }
   },800);
 }
 function calLoad(){try{const r=localStorage.getItem('ag9-cal');if(r)CAL.diarias=JSON.parse(r);}catch(e){}}
@@ -5241,7 +5296,21 @@ function demSubTabBar(){
     <div class="dem-subtabs-right">${viewToggle}</div>
   </div>`;
 }
-function demDel(id){if(!confirm('Excluir esta demanda?'))return;DEM.tasks=DEM.tasks.filter(x=>x.id!==id);demSave();renderDem();}
+function demDel(id){
+  if(!confirm('Excluir esta demanda?'))return;
+  DEM.tasks=DEM.tasks.filter(x=>x.id!==id);
+  demSave();
+  // Deleta chave específica no Firebase para não reaparecer via SSE
+  if(_syncUrl){
+    ensureToken().then(()=>{
+      if(!_idToken)return;
+      fetch(withAuth(_syncUrl+'/demTasks/'+id+'.json'),{
+        method:'DELETE',mode:'cors',cache:'no-store'
+      }).catch(()=>{});
+    });
+  }
+  renderDem();
+}
 
 let demDragId=null;
 let _demDragTarget=null; // coluna atual do hover
@@ -5595,7 +5664,7 @@ async function demSaveTaskWithFeedback(btn){
   btn.style.opacity = '0.8';
 
   // 1. Salva localmente AGORA — síncrono, não depende de rede
-  demSaveTask(); // salva no localStorage + agenda demPush + fbPush
+  demSaveTask(); // salva no localStorage + agenda demPush (só demandas)
 
   const finalize = (success) => {
     if(success){
@@ -6281,7 +6350,13 @@ function fbSetStatus(status,label){
   }else{
     if(banner)banner.remove();
   }
-  if(status==='online'){_lastSyncTime=new Date();if(_syncPanelOpen)renderSyncLog();}
+  if(status==='online'){
+    _lastSyncTime=new Date();
+    if(_syncPanelOpen)renderSyncLog();
+    // Se voltou online, tenta sincronizar pendentes
+    if(typeof _demPending!=='undefined'&&_demPending) setTimeout(demPush,500);
+    if(typeof _calPending!=='undefined'&&_calPending) setTimeout(calPush,700);
+  }
   _syncConnected=(status==='online');
 }
 
@@ -6344,7 +6419,7 @@ function fbSnapshot(){
     ts: Date.now(),
     sm:S.sm, des:S.des, vm:S.vm, gt:(S.gt||[]), cw:(S.cw||[]),
     extraTeam:(S.extraTeam||[]), senhas:(S.senhas||[]),
-    clients: (S.clients||[]).map(c=>({...c,kv:null,joey:null})),
+    // clients enviado separadamente via fbPush → /clientsData para evitar sobrescrita entre usuários
     inventory:(S.inventory||[]),
     onboarding:S.onboarding.map(o=>({...o,file:null})),
     funcionarios:S.funcionarios.map(f=>({...f,contract:null})),
@@ -6364,7 +6439,7 @@ function fbSnapshot(){
     influencers:(S.influencers||[]),
     atores:(S.atores||[]),
     // demTasks enviado separadamente por demPush() para evitar sobrescrever demandas de outros usuários
-    diarias: CAL.diarias.map(d=>({...d,files:[],assignees:(d.assignees||[])})),
+    // diarias enviadas separadamente via calPush → /diarias (objeto {id: diaria})
     avAgenda:(S.avAgenda||[]),
   };
 }
@@ -6385,10 +6460,59 @@ function fbMergeTasks(remote, local){
 }
 
 // Aplica dados recebidos do Firebase
+
+/* Merge de clientes: versão mais recente (updatedAt) vence — nunca substitui cegamente */
+function fbMergeClients(remote, local){
+  const localMap={};
+  (local||[]).forEach(c=>{ localMap[c.id]=c; });
+  const remoteMap={};
+  (remote||[]).forEach(c=>{ remoteMap[c.id]=c; });
+
+  const merged=[];
+  // Para cada cliente remoto: compara com local
+  (remote||[]).forEach(rc=>{
+    const lc=localMap[rc.id];
+    if(!lc){
+      // Não existe localmente
+      // Se remoto marcou como deletado, não adiciona
+      if(rc._deleted) return;
+      merged.push({...rc,kv:null,joey:null});
+    } else {
+      // Existe nos dois — vence o mais recente
+      const rTime=rc.updatedAt?new Date(rc.updatedAt).getTime():0;
+      const lTime=lc.updatedAt?new Date(lc.updatedAt).getTime():0;
+      if(rTime>lTime){
+        // Remoto mais recente
+        if(rc._deleted) return; // deletado pelo remoto — não inclui
+        merged.push({...rc,kv:lc.kv||null,joey:lc.joey||null});
+      } else {
+        // Local mais recente (ou igual)
+        if(lc._deleted) return; // deletado localmente — não inclui
+        merged.push(lc);
+      }
+    }
+  });
+  // Clientes locais que não existem no remoto
+  (local||[]).forEach(lc=>{
+    if(!remoteMap[lc.id]){
+      if(!lc._deleted) merged.push(lc); // criado offline, não deletado
+    }
+  });
+  return merged;
+}
+
 function fbApply(data){
   if(!data) return;
   const safeArr=(r,c)=>(Array.isArray(r)&&r.length>0)?r:c;
   const fall='2026-01-01T00:00:00Z';
+
+  // Normaliza: aceita tanto formato novo (paths separados) quanto antigo (flat)
+  // Formato novo: data.equipe, data.clientsData, data.operacional, data.financeiro, data.producao
+  if(data.equipe)       Object.assign(data, data.equipe);
+  if(data.clientsData)  Object.assign(data, data.clientsData);
+  if(data.operacional)  Object.assign(data, data.operacional);
+  if(data.financeiro)   Object.assign(data, data.financeiro);
+  if(data.producao)     Object.assign(data, data.producao);
 
   // Equipe
   if(data.sm&&data.sm.length)   S.sm=data.sm;
@@ -6399,21 +6523,32 @@ function fbApply(data){
   if(data.extraTeam)            { S.extraTeam=data.extraTeam; S.extraTeam.forEach(r=>{if(!r.members)r.members=[];}); }
   if(data.funcionarios&&data.funcionarios.length) S.funcionarios=data.funcionarios.map(f=>({...f,contract:f.contract||null}));
 
-  // Clientes — aceita sempre que Firebase tiver dados
+  // Clientes — MERGE por updatedAt (nunca substitui cegamente)
   if(Array.isArray(data.clients)&&data.clients.length){
-    S.clients=data.clients;
-    S.clients.forEach(c=>{
-      if(!c.status)c.status='normal';
-      if(c.block===undefined)c.block=null;
-      if(c.vmId===undefined)c.vmId=null;
-      if(c.gtId===undefined)c.gtId=null;
-      if(!c.traffic)c.traffic={lastCreative:'',links:[],ideas:'',obs:''};
-      // migração: campos antigos (single) → arrays
-      if(!c.desIds)c.desIds=c.desId?[c.desId]:[];
-      if(!c.vmIds)c.vmIds=c.vmId?[c.vmId]:[];
-      if(!c.gtIds)c.gtIds=c.gtId?[c.gtId]:[];
-      if(!c.edIds)c.edIds=[];
-    });
+    const normalized=data.clients.map(c=>({
+      ...c,
+      status:c.status||'normal',
+      block:c.block===undefined?null:c.block,
+      vmId:c.vmId===undefined?null:c.vmId,
+      gtId:c.gtId===undefined?null:c.gtId,
+      traffic:c.traffic||{lastCreative:'',links:[],ideas:'',obs:''},
+      desIds:c.desIds||(c.desId?[c.desId]:[]),
+      vmIds:c.vmIds||(c.vmId?[c.vmId]:[]),
+      gtIds:c.gtIds||(c.gtId?[c.gtId]:[]),
+      edIds:c.edIds||[],
+    }));
+    S.clients=fbMergeClients(normalized, S.clients);
+    // Persiste merge no localStorage imediatamente para não perder ao recarregar
+    try{
+      const lite={...S,
+        clients:S.clients.map(c=>({...c,kv:null,joey:null})),
+        funcionarios:S.funcionarios.map(f=>({...f,contract:null})),
+        lancamentos:S.lancamentos.map(l=>({...l,delivs:Object.fromEntries(Object.entries(l.delivs).map(([k,v])=>[k,{...v,file:null}]))})),
+        terceirizados:Object.fromEntries(THIRD_SECS.map(s=>[s.key,(S.terceirizados[s.key]||[]).map(j=>({...j,file:null}))])),
+        audiovisual:S.audiovisual.map(a=>({...a,file:null})),
+      };
+      localStorage.setItem('ag9',JSON.stringify(lite));
+    }catch(e){}
     syncClientsToRec&&syncClientsToRec();
   }
 
@@ -6449,6 +6584,8 @@ function fbApply(data){
     }
     if(remoteDiarias.length){
       CAL.diarias=fbMergeDiarias(remoteDiarias.map(d=>({...d,files:d.files||[]})), CAL.diarias);
+      // Persiste merge no localStorage imediatamente
+      try{localStorage.setItem('ag9-cal',JSON.stringify(CAL.diarias));}catch(e){}
     }
     // vazio não apaga diárias locais
   }
@@ -6468,6 +6605,77 @@ function fbApply(data){
 }
 
 // Envia dados ao Firebase — debounce 800ms
+/* Re-sincronização total — envia TUDO para o Firebase */
+async function forceSync(){
+  const btn=document.getElementById('force-sync-btn');
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 1s linear infinite;font-size:12px"></i> Sincronizando...'; }
+  addSyncLog('manual','🔄 Re-sincronização total iniciada');
+
+  try{
+    await ensureToken();
+    if(!_idToken){
+      addSyncLog('error','Sem autenticação — recarregue a página');
+      if(btn){ btn.disabled=false; btn.innerHTML='<i class="ti ti-refresh"></i> Re-sincronizar tudo'; }
+      return;
+    }
+
+    let ok=0, err=0;
+
+    // 1. Firebase push (clientes, equipe, operacional, financeiro, produção)
+    await new Promise(resolve=>{
+      const orig=_pendingSync;
+      _pendingSync=true;
+      fbPush();
+      setTimeout(resolve, 1500);
+    });
+
+    // 2. Demandas — envia objeto {id: task}
+    if(DEM.tasks.length){
+      try{
+        const obj={};
+        DEM.tasks.forEach(t=>{ obj[t.id]=t; });
+        const r=await fetch(withAuth(_syncUrl+'/demTasks.json'),{
+          method:'PATCH', mode:'cors', cache:'no-store',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(obj),
+        });
+        if(r.ok){ ok++; _demPending=false; addSyncLog('sync','✓ '+DEM.tasks.length+' demandas enviadas'); }
+        else{ err++; addSyncLog('error','✗ Erro demandas: HTTP '+r.status); }
+      }catch(e){ err++; addSyncLog('error','✗ Erro demandas: '+e.message); }
+    }
+
+    // 3. Diárias — envia objeto {id: diaria}
+    if(CAL.diarias.length){
+      try{
+        const obj={};
+        CAL.diarias.forEach(d=>{ obj[d.id]={...d,files:[]}; });
+        const r=await fetch(withAuth(_syncUrl+'/diarias.json'),{
+          method:'PATCH', mode:'cors', cache:'no-store',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(obj),
+        });
+        if(r.ok){ ok++; _calPending=false; addSyncLog('sync','✓ '+CAL.diarias.length+' diárias enviadas'); }
+        else{ err++; addSyncLog('error','✗ Erro diárias: HTTP '+r.status); }
+      }catch(e){ err++; addSyncLog('error','✗ Erro diárias: '+e.message); }
+    }
+
+    if(err===0){
+      addSyncLog('sync','✅ Re-sincronização completa — '+S.clients.length+' clientes, '+DEM.tasks.length+' demandas, '+CAL.diarias.length+' diárias');
+      fbSetStatus('online','Tudo sincronizado');
+      _pendingSync=false;
+    } else {
+      addSyncLog('error','⚠️ '+err+' erro(s) na sincronização — verifique a conexão');
+    }
+  }catch(e){
+    addSyncLog('error','Erro na re-sincronização: '+e.message);
+  }finally{
+    if(btn){
+      btn.disabled=false;
+      btn.innerHTML='<i class="ti ti-refresh"></i> Re-sincronizar tudo';
+    }
+  }
+}
+
 function fbPush(){
   if(!_syncUrl) return;
   clearTimeout(_syncTimer);
@@ -6477,24 +6685,79 @@ function fbPush(){
     try{
       await ensureToken();
       if(!_syncUrl||!_idToken){ _pendingSync=true; fbSetStatus('offline','Sem conexão'); return; }
-      const snap=fbSnapshot();
-      const res=await fetch(withAuth(_syncUrl+'.json'),{
-        method:'PATCH', mode:'cors', cache:'no-store',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(snap),
-      });
-      if(!res.ok){
-        const t=await res.text().catch(()=>'');
-        if(res.status===401||res.status===403){
-          addSyncLog('error','Sem permissão no Firebase ('+res.status+')');
+      
+      // Divide em patches separados para evitar sobrescrever dados de outros usuários
+      // Cada patch vai para um path específico no Firebase
+      const patches = [
+        // Configuração de equipe (raramente muda, admin-owned)
+        { path:'equipe', data:{
+            sm:S.sm, des:S.des, vm:S.vm, gt:(S.gt||[]), cw:(S.cw||[]),
+            extraTeam:(S.extraTeam||[]), senhas:(S.senhas||[]),
+            funcionarios:S.funcionarios.map(f=>({...f,contract:null})),
+            homePhrase:(S.homePhrase||''),
+          }
+        },
+        // Clientes (SM e admin editam — merge por updatedAt)
+        { path:'clientsData', data:{
+            clients:(S.clients||[]).map(c=>({...c,kv:null,joey:null,
+              updatedAt:c.updatedAt||new Date().toISOString()})),
+          }
+        },
+        // Operacional (campanhas, inventário, agenda AV)
+        { path:'operacional', data:{
+            campanhas:(S.campanhas||[]),
+            inventory:(S.inventory||[]),
+            avAgenda:(S.avAgenda||[]),
+            fornecedores:(S.fornecedores||[]),
+            influencers:(S.influencers||[]),
+            atores:(S.atores||[]),
+          }
+        },
+        // Financeiro (separado — dados sensíveis)
+        { path:'financeiro', data:{
+            fin:S.fin,
+            lancamentos:S.lancamentos.map(l=>({...l,
+              delivs:Object.fromEntries(Object.entries(l.delivs).map(([k,v])=>[k,{...v,file:null}]))})),
+            contratos:(S.contratos||[]).map(ct=>({...ct,file:null})),
+            agentes:(S.agentes||[]).map(a=>({...a,historico:a.historico||[]})),
+          }
+        },
+        // Onboarding e audiovisual
+        { path:'producao', data:{
+            onboarding:S.onboarding.map(o=>({...o,file:null})),
+            audiovisual:S.audiovisual.map(a=>({...a,file:null})),
+            terceirizados:Object.fromEntries(
+              THIRD_SECS.map(s=>[s.key,(S.terceirizados[s.key]||[]).map(j=>({...j,file:null}))])
+            ),
+          }
+        },
+      ];
+
+      // Envia todos os patches em paralelo
+      const results = await Promise.allSettled(patches.map(({path,data})=>
+        fetch(withAuth(_syncUrl+'/'+path+'.json'),{
+          method:'PUT', mode:'cors', cache:'no-store',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(data),
+        })
+      ));
+
+      const failed = results.filter(r=>r.status==='rejected'||(r.value&&!r.value.ok));
+      if(failed.length){
+        const r = failed[0];
+        if(r.value&&(r.value.status===401||r.value.status===403)){
+          addSyncLog('error','Sem permissão no Firebase');
           let b=document.getElementById('sync-pending-banner');
           if(!b){b=document.createElement('div');b.id='sync-pending-banner';document.body.appendChild(b);}
           b.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:500;background:#7f1d1d;color:#fee2e2;font-size:12px;font-weight:600;font-family:"Plus Jakarta Sans",sans-serif;padding:8px 16px;display:flex;align-items:center;gap:8px;justify-content:center;border-top:1px solid #991b1b';
-          b.innerHTML='<i class="ti ti-lock" style="font-size:14px"></i> Firebase: permissão negada. Dados salvos localmente. Contate o administrador.';
+          b.innerHTML='<i class="ti ti-lock" style="font-size:14px"></i> Firebase: permissão negada. Dados salvos localmente.';
           _pendingSync=true; fbSetStatus('offline','Sem permissão'); return;
         }
-        throw new Error('HTTP '+res.status+' '+t.substring(0,80));
+        const failedPaths=patches.filter((_,i)=>{const r=results[i];return r.status==='rejected'||(r.value&&!r.value.ok);}).map(p=>p.path);
+        addSyncLog('error','Falha nos patches: '+failedPaths.join(', ')+' — tentando em 10s');
+        throw new Error('Falha em '+failed.length+' patches: '+failedPaths.join(', '));
       }
+
       _pendingSync=false;
       addSyncLog('sync','Salvo — '+DEM.tasks.length+' demandas, '+S.clients.length+' clientes');
       if(!_syncOwn) fbSetStatus('online','Sincronizado');
@@ -6502,7 +6765,11 @@ function fbPush(){
       _pendingSync=true;
       addSyncLog('error','Erro ao salvar: '+e.message+' — tentando em 10s');
       fbSetStatus('offline','Offline — tentando novamente...');
-      setTimeout(()=>{ if(_syncUrl&&_pendingSync){ addSyncLog('retry','Tentativa automática'); fbPush(); } },10000);
+      setTimeout(()=>{
+      if(_syncUrl&&_pendingSync){ addSyncLog('retry','Tentativa automática fbPush'); fbPush(); }
+      if(_syncUrl&&_demPending){ addSyncLog('retry','Tentativa automática demPush'); demPush(); }
+      if(_syncUrl&&_calPending){ addSyncLog('retry','Tentativa automática calPush'); calPush(); }
+    },10000);
     }
   },800);
 }
