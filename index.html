@@ -2620,6 +2620,7 @@ function renderAll(){
   if(document.getElementById('pane-contratos')?.classList.contains('active'))renderContratos();
   if(S.tab==='demandas'){renderDem();}
   if(S.tab==='fornecedores'){if(_fornSubTab==='infl')renderInfluencers();else if(_fornSubTab==='atores')renderAtores();else renderForn();}
+  if(S.tab==='brain'){renderBrain();} // re-renderiza chips se clientes mudaram via SSE
 }
 
 /* ══════ TAB ══════ */
@@ -2653,7 +2654,12 @@ function go(tab){
   if(tab==='campanha')  renderCampanha();
   if(tab==='contratos') renderContratos();
   if(tab==='home') renderHome();
-  if(tab==='brain') renderBrain();
+  if(tab==='brain'){
+    // Verifica permissão antes de renderizar
+    const _isSMOrAdmin=((_curRole==='admin')||(_authMode==='legacy')||(S.sm||[]).some(m=>(m.email||'').toLowerCase()===(_curUser?.email||'').toLowerCase())||((S.funcionarios||[]).find(f=>(f.email||'').toLowerCase()===(_curUser?.email||'').toLowerCase())?.teamRole==='sm'));
+    if(!_isSMOrAdmin){go('demandas');return;}
+    renderBrain();
+  }
   if(tab==='fornecedores') { _fornSubTab='forn'; renderForn(); renderAtores&&null; }
   if(tab==='funcionarios'){
     if(!_equipeUnlocked){showEquipeLock();return;}
@@ -4685,6 +4691,12 @@ let DEM={tasks:[],filter:'dall',editId:null,profile:null,view:'kanban',calView:'
 let CAL={year:new Date().getFullYear(),month:new Date().getMonth(),diarias:[],subTab:'kanban',weekOffset:0,vmFilter:null};
 
 function demSave(){
+  // Deduplicação de segurança: remove tasks com id duplicado (pode ocorrer após merge)
+  // e normaliza todos os ids para número
+  const _seen=new Set();
+  DEM.tasks=DEM.tasks
+    .map(t=>({...t,id:+t.id}))
+    .filter(t=>Number.isFinite(t.id)&&!_seen.has(t.id)&&_seen.add(t.id));
   try{localStorage.setItem('ag9-dem',JSON.stringify(DEM.tasks));addSyncLog('save',`Demandas salvas (${DEM.tasks.length} tarefas)`);}catch(e){addSyncLog('error','Erro ao salvar demandas: '+e.message);}
   // demPush envia APENAS demandas para /demTasks — não toca em clients nem em mais nada
   // fbPush NÃO é chamado aqui para não re-enviar clients com versão desatualizada
@@ -4699,7 +4711,7 @@ function demPush(){
   if(!_syncUrl){ _demPending=true; return; }
   clearTimeout(_demPushTimer);
   _demPushTimer=setTimeout(async()=>{
-    if(!_syncUrl||!DEM.tasks.length) return;
+    if(!_syncUrl) return; // envia mesmo com array vazio para propagar deleções
     try{
       await ensureToken();
       if(!_idToken){ _demPending=true; return; }
@@ -4736,7 +4748,7 @@ let _calPushTimer=null;
 let _calPending=false; // diárias com sync pendente
 function calPush(){
   if(!_syncUrl){ _calPending=true; return; }
-  if(!CAL.diarias.length) return;
+  // não bloqueia por array vazio — permite propagar deleção de diárias
   clearTimeout(_calPushTimer);
   _calPushTimer=setTimeout(async()=>{
     if(!_syncUrl) return;
@@ -4771,9 +4783,9 @@ function demLoad(){
     const r=localStorage.getItem('ag9-dem');
     if(r){
       DEM.tasks=JSON.parse(r);
-      // migração: garante que todas as demandas têm updatedAt
-      // sem isso o merge não sabe qual versão é mais recente
+      // Normaliza ids para número e garante updatedAt (sem isso o merge não funciona)
       const fallback='2026-01-01T00:00:00Z';
+      DEM.tasks=DEM.tasks.map(t=>({...t,id:+t.id}));
       DEM.tasks.forEach(t=>{
         if(!t.updatedAt) t.updatedAt=t.createdAt||fallback;
       });
@@ -5399,7 +5411,7 @@ function demSubTabBar(){
 }
 function demDel(id){
   if(!confirm('Excluir esta demanda?'))return;
-  DEM.tasks=DEM.tasks.filter(x=>x.id!==id);
+  DEM.tasks=DEM.tasks.filter(x=>+x.id!==+id); // coerção para evitar string vs number
   demSave();
   // Deleta chave específica no Firebase para não reaparecer via SSE
   if(_syncUrl){
@@ -5508,7 +5520,7 @@ function rteGetContent(){
 
 function demOpenModal(defaultCol,editId){
   DEM.editId=editId||null;
-  const existing=editId!=null?DEM.tasks.find(x=>x.id===editId):null;
+  const existing=editId!=null?DEM.tasks.find(x=>+x.id===+editId):null; // coerção: id pode ser string
   const col=existing?.col||defaultCol||'do';
   const members=demAllMembers();
   const selA=new Set((existing?.assignees||[]).map(a=>`${a.type}-${a.id}`));
@@ -5851,14 +5863,15 @@ function demSaveTask(){
     const[type,idStr]=el.dataset.key.split('-');assignees.push({type,id:+idStr});
   });
   const prevAssignees=DEM.editId!=null
-    ?(DEM.tasks.find(x=>x.id===DEM.editId)?.assignees||[]).map(a=>`${a.type}-${a.id}`)
+    ?(DEM.tasks.find(x=>+x.id===+DEM.editId)?.assignees||[]).map(a=>`${a.type}-${a.id}`) // coerção: id pode ser string
     :[];
   const now=new Date().toISOString();
   if(DEM.editId!=null){
-    const t=DEM.tasks.find(x=>x.id===DEM.editId);
+    const t=DEM.tasks.find(x=>+x.id===+DEM.editId); // usa coerção para número (evita bug string vs number)
     if(t)Object.assign(t,{title,cat,pri,col,deadline,abertura,hora,formato,objetivo,desc,linkEntrega,assignees,briefing,comments:t.comments||[],updatedAt:now});
   }else{
-    const nid=DEM.tasks.length?Math.max(...DEM.tasks.map(x=>x.id))+1:1;
+    const _validIds=DEM.tasks.map(x=>+x.id).filter(n=>Number.isFinite(n));
+    const nid=_validIds.length?Math.max(..._validIds)+1:1;
     const actor=notifMyId()||(DEM.profile?.name)||'';
     DEM.tasks.push({id:nid,title,cat,pri,col,deadline,abertura,hora,formato,objetivo,desc,linkEntrega,assignees,briefing,comments:[],createdBy:actor,createdAt:now,updatedAt:now});
   }
@@ -5868,10 +5881,12 @@ function demSaveTask(){
   if(!document.getElementById('dem-save-btn')?.disabled){
     closeM(); renderDem();
   }
-  // notifica novos atribuídos
+  // notifica novos atribuídos — captura tid e referência da task ANTES do timeout
+  const _notifTid=DEM.editId; // captura antes de fechar o modal
+  const _notifTask=_notifTid!=null?DEM.tasks.find(x=>+x.id===+_notifTid):DEM.tasks[DEM.tasks.length-1];
   setTimeout(()=>{
-    const tid=DEM.editId;
-    const t=tid!=null?DEM.tasks.find(x=>x.id===tid):DEM.tasks[DEM.tasks.length-1];
+    const tid=_notifTid;
+    const t=_notifTask;
     if(!t)return;
     const newKeys=assignees.map(a=>`${a.type}-${a.id}`);
     newKeys.filter(k=>!prevAssignees.includes(k)).forEach(k=>{
@@ -6557,14 +6572,16 @@ function fbSnapshot(){
 // Merge de demandas por ID + updatedAt
 function fbMergeTasks(remote, local){
   if(!Array.isArray(remote)||!remote.length) return local;
-  if(!Array.isArray(local)||!local.length) return remote;
+  if(!Array.isArray(local)||!local.length) return remote.map(t=>({...t,id:+t.id}));
   const byId={};
-  remote.forEach(t=>{ byId[t.id]=t; });
+  // normaliza todos os ids para número antes do merge
+  remote.forEach(t=>{ const id=+t.id; byId[id]={...t,id}; });
   local.forEach(t=>{
-    if(!byId[t.id]){ byId[t.id]=t; return; }
-    const remTs=byId[t.id].updatedAt||byId[t.id].createdAt||'';
-    const locTs=t.updatedAt||t.createdAt||'';
-    if(locTs>=remTs) byId[t.id]=t;
+    const id=+t.id; const lt={...t,id};
+    if(byId[id]===undefined){ byId[id]=lt; return; }
+    const remTs=byId[id].updatedAt||byId[id].createdAt||'';
+    const locTs=lt.updatedAt||lt.createdAt||'';
+    if(locTs>=remTs) byId[id]=lt;
   });
   return Object.values(byId);
 }
@@ -6712,6 +6729,24 @@ function fbApply(data){
     });
     if(_onlyJoey){ renderClients&&renderClients(); return; }
   }
+  // Brain — carrega dados do usuário atual se SSE trouxer atualização remota
+  if(data.brain&&typeof data.brain==='object'){
+    const _bkey=_brainUserKey();
+    const _myBrain=data.brain[_bkey];
+    if(_myBrain&&typeof _myBrain==='object'){
+      const _bloc=_brainLoad();
+      let _bchg=false;
+      Object.entries(_myBrain).forEach(([scope,sd])=>{
+        if(!sd||typeof sd!=='object') return;
+        const lsd=_bloc[scope];
+        const rs=(sd.note||'').length+(sd.refs||[]).length*10+(sd.lems||[]).length*5;
+        const ls=lsd?(lsd.note||'').length+(lsd.refs||[]).length*10+(lsd.lems||[]).length*5:0;
+        if(rs>ls){_bloc[scope]=sd;_bchg=true;}
+      });
+      if(_bchg){_brainSave(_bloc);if(S.tab==='brain')renderBrain();}
+    }
+  }
+
 
   // Normaliza: aceita tanto formato novo (paths separados) quanto antigo (flat)
   // Formato novo: data.equipe, data.clientsData, data.operacional, data.financeiro, data.producao
@@ -6767,7 +6802,7 @@ function fbApply(data){
       remoteTasks=data.demTasks;
     } else if(typeof data.demTasks==='object'){
       // objeto {id: task} — converte para array
-      remoteTasks=Object.values(data.demTasks).filter(t=>t&&t.id);
+      remoteTasks=Object.values(data.demTasks).filter(t=>t&&t.id!=null).map(t=>({...t,id:+t.id}));// normaliza id para número
     }
     if(remoteTasks.length){
       remoteTasks.forEach(t=>{if(!t.updatedAt)t.updatedAt=t.createdAt||fall;});
@@ -7148,7 +7183,7 @@ async function fbStartSSE(){
       clearTimeout(_sseRetryTimer);
       _sseRetryTimer=setTimeout(()=>{ if(_syncUrl) fbStartSSE(); },delay);
     };
-    _syncSSE.onopen=()=>{ _sseRetries=0; fbSetStatus('online','Sincronizado'); setTimeout(fbLoadFiles, 800); };
+    _syncSSE.onopen=()=>{ _sseRetries=0; fbSetStatus('online','Sincronizado'); setTimeout(fbLoadFiles, 800); setTimeout(fbLoadBrain, 1500); };
   }catch(e){}
 }
 
@@ -7207,8 +7242,9 @@ async function fbConnect(dbUrl){
     fbSetStatus('online','Sincronizado');
     if(data){fbApply(data);renderAll();}
     else{fbPush();}
-    // Carrega KV/Joey do Firebase após conectar (arquivos grandes, path separado)
+    // Carrega KV/Joey e Brain do Firebase após conectar (arquivos grandes, path separado)
     setTimeout(fbLoadFiles, 1000);
+    setTimeout(fbLoadBrain, 1400);
     if(_pendingSync){addSyncLog('sync','Enviando dados pendentes...');fbPush();}
     fbStartSSE();
     return true;
@@ -8868,7 +8904,13 @@ function applyPermissions(){
   const isAtendimento=email==='atendimento@coalacreative.com.br'||
     (S.funcionarios||[]).some(f=>(f.email||'').toLowerCase()===email&&f.teamRole==='atend');
   const isSM=(()=>{
-    if(_authMode==='legacy')return false;
+    // Em modo legacy, verifica direto nos arrays (sem depender de Firebase auth)
+    if(_authMode==='legacy'){
+      if((S.sm||[]).some(m=>(m.email||'').toLowerCase()===email))return true;
+      const f=(S.funcionarios||[]).find(x=>(x.email||'').toLowerCase()===email);
+      if(f?.teamRole==='sm')return true;
+      return false;
+    }
     // Verifica em funcionarios (teamRole)
     const f=(S.funcionarios||[]).find(x=>(x.email||'').toLowerCase()===email);
     if(f?.teamRole==='sm')return true;
@@ -9258,7 +9300,7 @@ function notifShow(){
 /* Chamado ao mover uma demanda */
 const _origDemMove=typeof demMove!=='undefined'?demMove:null;
 function demMove(id,col){
-  const t=DEM.tasks.find(x=>x.id===id);
+  const t=DEM.tasks.find(x=>+x.id===+id);
   if(t){
     const colLabel=DEM_COLS[col]||col;
     const type=col==='done'?'delivered':col==='alt'?'altered':'moved';
@@ -9275,7 +9317,7 @@ async function demAddComment(){
   const text=(inp?.value||'').trim();
   if(!text)return;
   const tid=DEM.editId;if(tid==null)return;
-  const t=DEM.tasks.find(x=>x.id===tid);if(!t)return;
+  const t=DEM.tasks.find(x=>+x.id===+tid);if(!t)return; // coerção: id pode ser string após merge
   if(!t.comments)t.comments=[];
   const p=DEM.profile;
   const author=p&&p.type!=='admin'?p.name:(S.equipeLogada||'Equipe');
@@ -10341,6 +10383,7 @@ function brainSaveNote(){
   if(!d[scope])d[scope]={note:'',refs:[],lems:[]};
   d[scope].note=val;
   _brainSave(d);
+  fbPushBrain(scope); // sincroniza com Firebase
   const ts=document.getElementById('brain-note-ts');
   if(ts){const now=new Date();ts.textContent='salvo às '+now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
 }
@@ -10357,6 +10400,7 @@ function brainAddRef(){
   if(!d[scope])d[scope]={note:'',refs:[],lems:[]};
   d[scope].refs.push({url,title:domain});
   _brainSave(d);
+  fbPushBrain(scope);
   inp.value='';
   _brainRenderRefs(d[scope].refs);
 }
@@ -10367,6 +10411,7 @@ function brainDelRef(i){
   if(!d[scope])return;
   d[scope].refs.splice(i,1);
   _brainSave(d);
+  fbPushBrain(scope);
   _brainRenderRefs(d[scope].refs);
 }
 
@@ -10380,6 +10425,7 @@ function brainAddLem(){
   if(!d[scope])d[scope]={note:'',refs:[],lems:[]};
   d[scope].lems.push({text,done:false});
   _brainSave(d);
+  fbPushBrain(scope);
   inp.value='';
   _brainRenderLems(d[scope].lems);
 }
@@ -10390,6 +10436,7 @@ function brainToggleLem(i){
   if(!d[scope]||!d[scope].lems[i])return;
   d[scope].lems[i].done=!d[scope].lems[i].done;
   _brainSave(d);
+  fbPushBrain(scope);
   _brainRenderLems(d[scope].lems);
 }
 
@@ -10399,10 +10446,74 @@ function brainDelLem(i){
   if(!d[scope])return;
   d[scope].lems.splice(i,1);
   _brainSave(d);
+  fbPushBrain(scope);
   _brainRenderLems(d[scope].lems);
 }
 
 
+
+
+/* ── Brain → Firebase sync ─────────────────────────────────────────── */
+function _brainUserKey(){
+  return (_curUser?.email||'guest').replace(/[.@]/g,'_');
+}
+
+async function fbPushBrain(scope){
+  if(!_syncUrl) return;
+  try{
+    await ensureToken();
+    if(!_idToken) return;
+    const d=_brainLoad();
+    const sd=d[scope]||{note:'',refs:[],lems:[]};
+    const key=_brainUserKey();
+    // PATCH — só atualiza o scope alterado, não toca em outros usuários/scopes
+    await fetch(withAuth(_syncUrl+'/brain/'+key+'/'+encodeURIComponent(scope)+'.json'),{
+      method:'PUT', mode:'cors', cache:'no-store',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(sd),
+    });
+    addSyncLog('sync','Brain salvo ('+scope+')');
+  }catch(e){
+    addSyncLog('error','Brain Firebase: '+e.message);
+  }
+}
+
+async function fbLoadBrain(){
+  if(!_syncUrl) return;
+  try{
+    await ensureToken();
+    if(!_idToken) return;
+    const key=_brainUserKey();
+    const res=await fetch(withAuth(_syncUrl+'/brain/'+key+'.json'),{mode:'cors',cache:'no-store'});
+    if(!res.ok) return;
+    const remote=await res.json();
+    if(!remote||typeof remote!=='object') return;
+    // Merge: Firebase tem prioridade (mais recente = dispositivo que salvou por último)
+    // mas preserva dados locais para scopes que não existem no remoto
+    const local=_brainLoad();
+    let changed=false;
+    Object.entries(remote).forEach(([scope,sd])=>{
+      if(!sd||typeof sd!=='object') return;
+      const lsd=local[scope];
+      // Se remoto tem nota mais longa ou mais refs/lems, usa remoto
+      // (heurística simples — não temos timestamp por scope)
+      const remoteScore=(sd.note||'').length+(sd.refs||[]).length*10+(sd.lems||[]).length*5;
+      const localScore=lsd?(lsd.note||'').length+(lsd.refs||[]).length*10+(lsd.lems||[]).length*5:0;
+      if(remoteScore>localScore){
+        local[scope]=sd;
+        changed=true;
+      }
+    });
+    if(changed){
+      _brainSave(local);
+      // Se Brain está aberto, re-renderiza
+      if(S.tab==='brain') renderBrain();
+      addSyncLog('sync','Brain carregado do Firebase');
+    }
+  }catch(e){
+    addSyncLog('error','Brain Firebase load: '+e.message);
+  }
+}
 
 </script>
 </body>
