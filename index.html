@@ -2721,7 +2721,7 @@ function renderAll(){
   funcSyncAll();syncFolhaSalarial();renderTeam();renderClients();renderOnboarding();
   renderFunc();renderThird();renderLanc();renderAV();renderFin();
   if(document.getElementById('pane-contratos')?.classList.contains('active'))renderContratos();
-  if(S.tab==='demandas'){renderDem();}
+  if(S.tab==='demandas'||!S.tab){renderDem();}
   if(S.tab==='fornecedores'){if(_fornSubTab==='infl')renderInfluencers();else if(_fornSubTab==='atores')renderAtores();else renderForn();}
   if(S.tab==='brain'){renderBrain();} // re-renderiza chips se clientes mudaram via SSE
 }
@@ -3275,13 +3275,31 @@ function editTpExtra(roleKey,id){
 function editChip(type,id){
   const arr=teamArr(type);
   const m=arr.find(x=>+x.id===+id);if(!m)return;
-  const chip=document.getElementById(`chip-${type}-${id}`);if(!chip)return;
-  const span=chip.querySelector('.chip-name');
-  const inp=document.createElement('input');inp.className='chip-name-inp';inp.value=m.name;
-  span.replaceWith(inp);inp.focus();inp.select();
-  const commit=()=>{const v=inp.value.trim();if(v)m.name=v;save();renderTeam();};
-  inp.addEventListener('blur',commit);
-  inp.addEventListener('keydown',e=>{if(e.key==='Enter')inp.blur();if(e.key==='Escape')renderTeam();});
+  // Busca email em S.funcionarios
+  const func=(S.funcionarios||[]).find(f=>f.name===m.name&&f.teamRole===type)||(S.funcionarios||[]).find(f=>f.name===m.name);
+  const curEmail=m.email||func?.email||'';
+  const lbl=type==='sm'?'Social Media':type==='des'?'Designer':type==='vm'?'Videomaker':type==='gt'?'Gestor de Tráfego':type==='cw'?'Copywriter':type;
+  document.getElementById('modal-root').innerHTML=`<div class="overlay" id="ov"><div class="modal sm">
+    <div class="modal-title">Editar ${lbl}</div>
+    <div class="field"><label>Nome</label><input id="ec-name" type="text" value="${ESC(m.name)}" /></div>
+    <div class="field" style="margin-top:8px"><label>E-mail</label><input id="ec-email" type="email" placeholder="email@coalacreative.com.br" value="${ESC(curEmail)}" /></div>
+    <div class="modal-actions">
+      <button class="btn-g" onclick="closeM()">Cancelar</button>
+      <button class="btn-p" onclick="(function(){
+        const name=document.getElementById('ec-name').value.trim();
+        const email=(document.getElementById('ec-email').value||'').trim().toLowerCase();
+        if(!name)return;
+        m.name=name;
+        if(email)m.email=email;
+        // Atualiza também em S.funcionarios
+        const f=(S.funcionarios||[]).find(function(x){return x.name===m.name&&x.teamRole==='${type}';})||(S.funcionarios||[]).find(function(x){return x.name===m.name;});
+        if(f){if(name)f.name=name;if(email)f.email=email;}
+        save();closeM();renderTeam();
+      })()">Salvar</button>
+    </div>
+  </div></div>`;
+  document.getElementById('ov').addEventListener('click',e=>{if(e.target.id==='ov')closeM();});
+  setTimeout(()=>document.getElementById('ec-name')?.focus(),50);
 }
 function delMember(type,id){
   if(type==='sm'){S.sm=S.sm.filter(m=>+m.id!==+id);S.clients.forEach(c=>{if(c.smId===id)c.smId=null;});}
@@ -3851,15 +3869,16 @@ function setFuncPerf(id,perf){
   f.perf=f.perf===perf?'':perf;
   save();renderFunc();
 }
-function autoAddToFuncionarios(name,roleLabel,teamRole){
+function autoAddToFuncionarios(name,roleLabel,teamRole,email){
   if(!name)return;
   let f=S.funcionarios.find(x=>x.name.toLowerCase()===name.toLowerCase());
   if(!f){
-    f={id:NID(S.funcionarios),name,teamRole:teamRole||'',role:roleLabel||'',salary:0,obs:'',contract:null,note:'',perf:'',_activeTab:'info'};
+    f={id:NID(S.funcionarios),name,email:email||'',teamRole:teamRole||'',role:roleLabel||'',salary:0,obs:'',contract:null,note:'',perf:'',_activeTab:'info'};
     S.funcionarios.push(f);
   } else {
     if(teamRole&&!f.teamRole)f.teamRole=teamRole;
     if(roleLabel&&!f.role)f.role=roleLabel;
+    if(email&&!f.email)f.email=email;
   }
 }
 function delFunc(id){
@@ -4698,6 +4717,7 @@ function renderModal(){
     body=`<div class="modal sm"><div class="modal-title">Novo(a) ${lbl}</div>
       <p style="font-size:12px;color:var(--text3);margin-bottom:1rem;margin-top:-0.5rem">Será adicionado(a) à equipe.</p>
       <div class="field"><label>Nome completo</label><input id="mi" type="text" placeholder="Nome..." /></div>
+      <div class="field" style="margin-top:8px"><label>E-mail</label><input id="mi-email" type="email" placeholder="email@coalacreative.com.br" /></div>
       <div class="modal-actions"><button class="btn-g" onclick="closeM()">Cancelar</button><button class="btn-p" onclick="doAddMember('${t}')">Adicionar</button></div>
     </div>`;
   }
@@ -4798,12 +4818,15 @@ function doAddExtraMember(roleKey){
 }
 function doAddMember(type){
   const name=document.getElementById('mi').value.trim();if(!name)return;
-  if(type==='sm')S.sm.push({id:NID(S.sm),name});
-  else if(type==='des')S.des.push({id:NID(S.des),name});
-  else if(type==='gt'){if(!S.gt)S.gt=[];S.gt.push({id:NID(S.gt),name});}
-  else if(type==='cw'){if(!S.cw)S.cw=[];S.cw.push({id:NID(S.cw),name});}
-  else S.vm.push({id:NID(S.vm),name});
-  autoAddToFuncionarios(name, type==='sm'?'Social Media':type==='des'?'Design':type==='vm'?'Videomaker':type==='gt'?'Gestor de Tráfego':type==='cw'?'Copywriter':type, type);
+  const email=(document.getElementById('mi-email')?.value||'').trim().toLowerCase();
+  const newId=type==='sm'?NID(S.sm):type==='des'?NID(S.des):type==='vm'?NID(S.vm):type==='gt'?NID(S.gt||[]):NID(S.cw||[]);
+  const member={id:newId,name,email:email||''};
+  if(type==='sm')S.sm.push(member);
+  else if(type==='des')S.des.push(member);
+  else if(type==='gt'){if(!S.gt)S.gt=[];S.gt.push(member);}
+  else if(type==='cw'){if(!S.cw)S.cw=[];S.cw.push(member);}
+  else S.vm.push(member);
+  autoAddToFuncionarios(name, type==='sm'?'Social Media':type==='des'?'Design':type==='vm'?'Videomaker':type==='gt'?'Gestor de Tráfego':type==='cw'?'Copywriter':type, type, email);
   closeM();save();renderTeam();renderClients();buildAndRefreshPanel();
   if(S.tab==='funcionarios')renderFunc();
   if(S.tab==='trafego')renderTrafego();
@@ -7594,6 +7617,10 @@ async function fbConnect(dbUrl){
     fbSetStatus('online','Sincronizado');
     if(data){
       try{ fbApply(data); }catch(fbErr){ addSyncLog("warn","Aviso ao aplicar dados: "+fbErr.message); }
+      // Garante que demandas e diárias do Firebase ficam no LS e na memória
+      // (crítico para novo dispositivo com LS vazio)
+      demSave();calSave();
+      demLoad();calLoad();
       renderAll();
     }
     else{fbPush();}
@@ -9184,6 +9211,7 @@ function initFirebaseAuth(){
         /* conecta a sincronização só agora que há token válido */
         const cfg=fbGetConfig();
         fbConnect((cfg&&cfg.url)?cfg.url:FIREBASE_URL);
+        addSyncLog('connect','Usuário: '+(_curUser?.email||'?')+' | Role: '+_curRole);
       }
       else{_curUser=null;_idToken=null;_curRole='equipe';
         if(_syncSSE){_syncSSE.close();_syncSSE=null;}_syncUrl=null;
@@ -9235,6 +9263,14 @@ async function loadRole(uid){
 function afterLogin(){
   const s=document.getElementById('login-screen');
   if(s){s.style.transition='opacity .35s';s.style.opacity='0';setTimeout(()=>{s.style.display='none';},380);}
+  // Se LS está vazio (novo dispositivo), mostra loading até Firebase carregar
+  const hasLocalData=!!(localStorage.getItem('ag9')||localStorage.getItem('ag9-dem'));
+  if(!hasLocalData){
+    const pane=document.getElementById('pane-demandas')||document.getElementById('main-content');
+    if(pane&&pane.innerHTML.trim().length<100){
+      pane.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:60vh;flex-direction:column;gap:16px"><div style="width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--coala-blue);border-radius:50%;animation:spin 1s linear infinite"></div><p style="color:var(--text3);font-size:14px">Carregando dados do servidor...</p></div>';
+    }
+  }
   const badge=document.getElementById('role-badge');
   const logoutBtn=document.getElementById('logout-btn');
   if(badge){
