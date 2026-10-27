@@ -3164,7 +3164,7 @@ function invAdd(){
   const cat=(S.invGroup!=='resp'&&S.invCat)||'eletronicos';
   const resp=(S.invGroup==='resp'&&S.invResp)?S.invResp:'';
   S.invSearch='';const si=document.getElementById('inv-search');if(si)si.value='';
-  S.inventory.push({id,name:'Novo item',cat,resp,status:'bom',obs:'',qty:1});
+  S.inventory.push({id,name:'Novo item',cat,resp,status:'bom',obs:'',qty:1,updatedAt:new Date().toISOString()});
   S.editInvName=id;S.editInvObs=null;S.editInvResp=null;
   save();renderInventory();
 }
@@ -3176,7 +3176,7 @@ function invAddTo(type,value){
   if(type==='cat'){cat=value;}
   else if(type==='resp'){resp=value||'';cat=(S.invCat||'eletronicos');}
   S.invSearch='';const si=document.getElementById('inv-search');if(si)si.value='';
-  S.inventory.push({id,name:'Novo item',cat,resp,status:'bom',obs:'',qty:1});
+  S.inventory.push({id,name:'Novo item',cat,resp,status:'bom',obs:'',qty:1,updatedAt:new Date().toISOString()});
   S.editInvName=id;S.editInvObs=null;S.editInvResp=null;
   save();renderInventory();
 }
@@ -7559,9 +7559,9 @@ function fbApply(data, _isPutRoot){
   // Array vazio ou ausente nunca apaga demandas locais
 
   // Demais áreas — aceita se Firebase tem dados
-  S.campanhas  = safeArr(data.campanhas,  S.campanhas);
-  S.senhas     = safeArr(data.senhas,     S.senhas);
-  S.inventory  = safeArr(data.inventory,  S.inventory);
+  if(data.campanhas)  S.campanhas  = fbMergeById(data.campanhas,  S.campanhas||[]);
+  if(data.senhas)     S.senhas     = fbMergeById(data.senhas,     S.senhas||[]);
+  if(data.inventory)  S.inventory  = fbMergeById(data.inventory,  S.inventory||[]);
   // avAgenda: aceita array OU objeto indexado (SSE de subpath)
   if(data.avAgenda){
     const _rawAg=Array.isArray(data.avAgenda)?data.avAgenda:Object.values(data.avAgenda);
@@ -8990,7 +8990,7 @@ function dlCampApres(id){
 }
 function rmCampApres(id){
   const cp=(S.campanhas||[]).find(x=>+x.id===+id);if(!cp)return;
-  cp.apres=null;save();renderCampanha();
+  cp.apres=null;_campTouch(cp);save();renderCampanha();
 }
 
 /* ═══════════════════════════════════
