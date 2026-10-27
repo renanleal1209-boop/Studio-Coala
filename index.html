@@ -4264,13 +4264,13 @@ function startJob(sec,id,field){S.editJobField={sec,id,field};renderThird();}
 function commitJob(sec,id,field){const el=document.getElementById(`jf-${sec}-${id}-${field}`);if(!el)return;const j=(S.terceirizados[sec]||[]).find(x=>+x.id===+id);if(!j)return;j[field]=el.value.trim();j.updatedAt=new Date().toISOString();S.editJobField=null;save();renderThird();}
 function jobKey(e,sec,id,field){if(e.key==='Enter'){e.preventDefault();commitJob(sec,id,field);}if(e.key==='Escape'){S.editJobField=null;renderThird();}}
 function addJob(sec){if(!S.terceirizados[sec])S.terceirizados[sec]=[];const id=NID(S.terceirizados[sec]);S.terceirizados[sec].push({id,title:'',resp:'',deadline:'',file:null,updatedAt:new Date().toISOString()});S.editJobField={sec,id,field:'title'};save();renderThird();}
-function delJob(sec,id){if(!confirm('Remover este job?'))return;S.terceirizados[sec]=(S.terceirizados[sec]||[]).filter(x=>+x.id!==+id);localStorage.removeItem(`ag9-jf-${sec}-${id}`);save();renderThird();}
+function delJob(sec,id){if(!confirm('Remover este job?'))return;const j=(S.terceirizados[sec]||[]).find(x=>+x.id===+id);if(!j)return;j._deleted=true;j.updatedAt=new Date().toISOString();localStorage.removeItem(`ag9-jf-${sec}-${id}`);save();renderThird();}
 
 
 function renderThird(){
   let html='';
   THIRD_SECS.forEach(sec=>{
-    const jobs=(S.terceirizados[sec.key]||[]).filter(j=>j!=null);
+    const jobs=(S.terceirizados[sec.key]||[]).filter(j=>j!=null&&!j._deleted);
     const sortedJobs=[...jobs].sort((a,b)=>(a.title||'').localeCompare(b.title||'','pt'));
     html+=`<div class="third-sec"><div class="third-sec-hdr"><div class="third-icon ${sec.cls}"><i class="ti ${sec.icon}"></i></div><h2>${sec.label}</h2><span class="bc">${jobs.length}</span></div>
       <div class="third-grid">${sortedJobs.map(j=>buildJobCard(sec.key,j)).join('')}<div style="display:flex;align-items:flex-start;padding-top:4px"><button class="add-job-btn" onclick="addJob('${sec.key}')"><i class="ti ti-plus" style="font-size:13px"></i> Novo job</button></div></div></div>`;
@@ -4309,7 +4309,7 @@ function renderAV(){
   if(view==='agenda'){
     if(agView)agView.style.display='block';
     if(grid)grid.style.display='none';
-    const n=(S.avAgenda||[]).length;
+    const n=(S.avAgenda||[]).filter(a=>!a._deleted).length;
     document.getElementById('av-count').textContent=n===1?'1 gravação agendada':(n+' gravações agendadas');
     renderAvAgenda();
   }else{
@@ -4747,7 +4747,7 @@ function avWeekMonday(offset){const d=new Date();d.setHours(12,0,0,0);const dow=
 function avSetWeek(delta){S.avWeekOffset=(S.avWeekOffset||0)+delta;renderAvAgenda();}
 function avWeekToday(){S.avWeekOffset=0;renderAvAgenda();}
 function avSetTeamFilter(id){S.avTeamFilter=(S.avTeamFilter===id)?null:id;renderAvAgenda();}
-function avAgVisible(){let arr=S.avAgenda||[];if(S.avTeamFilter)arr=arr.filter(e=>(e.team||[]).some(t=>t.type==='vm'&&t.id===S.avTeamFilter));return arr;}
+function avAgVisible(){let arr=(S.avAgenda||[]).filter(e=>!e._deleted);if(S.avTeamFilter)arr=arr.filter(e=>(e.team||[]).some(t=>t.type==='vm'&&t.id===S.avTeamFilter));return arr;}
 
 function avAgCard(e){
   const team=(e.team||[]).map(t=>{const m=demGetMember(t.type,t.id);return m?`<span class="avag-av" title="${ESC(m.name)}" style="background:${demMemberColor(t.type)}">${INI(m.name)}</span>`:'';}).join('');
@@ -4860,9 +4860,10 @@ function avAgAddProj(){const inp=document.getElementById('avag-proj-inp');if(!in
 function avAgDelProj(i){avAgReadFields();_avAgDraft.projetos.splice(i,1);avAgRenderModal();}
 function avAgAddLE(){const inp=document.getElementById('avag-le-inp');if(!inp)return;const v=inp.value.trim();if(!v)return;avAgReadFields();_avAgDraft.linhasEditoriais.push(v);avAgRenderModal();}
 function avAgDelLE(i){avAgReadFields();_avAgDraft.linhasEditoriais.splice(i,1);avAgRenderModal();}
-function avAgDel(id){if(!confirm('Remover esta gravação da agenda?'))return;S.avAgenda=(S.avAgenda||[]).filter(x=>String(x.id)!==String(id));save();closeM();renderAV();}
+function avAgDel(id){if(!confirm('Remover esta gravação da agenda?'))return;const ag=(S.avAgenda||[]).find(x=>String(x.id)===String(id));if(!ag)return;ag._deleted=true;ag.updatedAt=new Date().toISOString();save();closeM();renderAV();}
 function avAgSave(){avAgReadFields();if(!_avAgDraft.date){alert('Escolha a data da gravação.');return;}
   if(!_avAgDraft.status)_avAgDraft.status='confirmada';
+  _avAgDraft.updatedAt=new Date().toISOString();
   if(_avAgDraft.id==null){_avAgDraft.id='ag'+Date.now();if(!S.avAgenda)S.avAgenda=[];S.avAgenda.push(_avAgDraft);}
   else{const i=S.avAgenda.findIndex(x=>String(x.id)===String(_avAgDraft.id));if(i>=0)S.avAgenda[i]=_avAgDraft;}
   save();closeM();renderAV();
@@ -7355,13 +7356,13 @@ function fbMergeTerc(remote, local){
     rJobs.forEach(rj=>{
       if(!rj||rj.id==null) return;
       const lj=byId[rj.id];
-      if(!lj){ byId[rj.id]={...rj,file:rj.file||null}; return; }
+      if(!lj){ if(!rj._deleted) byId[rj.id]={...rj,file:rj.file||null}; return; }
       const rT=rj.updatedAt?new Date(rj.updatedAt).getTime():0;
       const lT=lj.updatedAt?new Date(lj.updatedAt).getTime():0;
       if(rT>lT) byId[rj.id]={...rj,file:lj.file||rj.file||null};
     });
     lJobs.forEach(lj=>{ if(!lj||lj.id==null) return; if(!byId[lj.id]) byId[lj.id]=lj; });
-    merged[key]=Object.values(byId);
+    merged[key]=Object.values(byId).filter(j=>j!=null&&!j._deleted);
   });
   return merged;
 }
@@ -7496,7 +7497,10 @@ function fbApply(data, _isPutRoot){
     S.extraTeam=Object.values(localExtraMap);
     S.extraTeam.forEach(r=>{if(!r.members)r.members=[];});
   }
-  if(data.funcionarios&&data.funcionarios.length) S.funcionarios=data.funcionarios.filter(f=>f!=null).map(f=>({...f,contract:f.contract||null}));
+  if(data.funcionarios&&data.funcionarios.length){
+    S.funcionarios=fbMergeById(data.funcionarios.filter(f=>f!=null).map(f=>({...f,id:+f.id})), S.funcionarios||[]);
+    S.funcionarios.forEach(f=>{if(!f)return;if(!f.contract){try{const c=localStorage.getItem(`ag9-ct-${f.id}`);if(c)f.contract=JSON.parse(c);}catch(e){}}});
+  }
 
   // Clientes — MERGE por updatedAt (nunca substitui cegamente)
   // Suporta clients como array (formato antigo) OU objeto indexado por id (novo)
@@ -7562,11 +7566,27 @@ function fbApply(data, _isPutRoot){
   if(data.campanhas)  S.campanhas  = fbMergeById(data.campanhas,  S.campanhas||[]);
   if(data.senhas)     S.senhas     = fbMergeById(data.senhas,     S.senhas||[]);
   if(data.inventory)  S.inventory  = fbMergeById(data.inventory,  S.inventory||[]);
-  // avAgenda: aceita array OU objeto indexado (SSE de subpath)
+  // avAgenda: aceita array OU objeto indexado (SSE de subpath) — merge por string id + updatedAt
   if(data.avAgenda){
     const _rawAg=Array.isArray(data.avAgenda)?data.avAgenda:Object.values(data.avAgenda);
-    const _mergedAg=_rawAg.filter(a=>a&&a.id!=null);
-    if(_mergedAg.length) S.avAgenda=_mergedAg;
+    const _filtAg=_rawAg.filter(a=>a&&a.id!=null);
+    if(_filtAg.length){
+      // avAgenda usa string ids (ex: 'ag1234') — merge manual sem converter para número
+      const _local=S.avAgenda||[];
+      const _byId={};
+      _local.forEach(a=>{if(!a||a.id==null)return;_byId[String(a.id)]={...a};});
+      _filtAg.forEach(ra=>{
+        const _rid=String(ra.id);
+        const _la=_byId[_rid];
+        if(!_la){if(!ra._deleted)_byId[_rid]=ra;}
+        else{
+          const rT=ra.updatedAt?new Date(ra.updatedAt).getTime():0;
+          const lT=_la.updatedAt?new Date(_la.updatedAt).getTime():0;
+          if(rT>lT)_byId[_rid]=ra;
+        }
+      });
+      S.avAgenda=Object.values(_byId).filter(a=>a!=null&&!a._deleted);
+    }
   }
   if(data.diarias){
     let remoteDiarias=[];
@@ -7628,15 +7648,11 @@ function fbApply(data, _isPutRoot){
     if(data.influencers) S.influencers=fbMergeById(data.influencers, S.influencers);
     if(data.atores) S.atores=fbMergeById(data.atores, S.atores);
   if(data.fin){ S.fin=data.fin; Object.keys(S.fin).forEach(k=>{const m=S.fin[k];if(!m.rec)m.rec=[];if(!m.avul)m.avul=[];if(!m.folha)m.folha=[];if(!m.fixos)m.fixos=[{id:1,desc:'Aluguel',value:0,date:''},{id:2,desc:'Luz',value:0,date:''},{id:3,desc:'Internet',value:0,date:''}];if(!m.variaveis)m.variaveis=[{id:1,desc:'Cartão de crédito 1',value:0,date:''},{id:2,desc:'Cartão de crédito 2',value:0,date:''},{id:3,desc:'Gasolina',value:0,date:''},{id:4,desc:'Alimentação',value:0,date:''},{id:5,desc:'Assinaturas',value:0,date:''}];}); if(!S.fin[S.month])ensureM(S.month); }
-  if(data.inventory){
-    const _rawInv=Array.isArray(data.inventory)?data.inventory:Object.values(data.inventory);
-    const _mergedInv=_rawInv.filter(x=>x!=null).map(x=>({...x,id:+x.id}));
-    if(_mergedInv.length) S.inventory=fbMergeById(_mergedInv, S.inventory);
-    S.inventory.forEach(it=>{if(!it)return;if(it.resp===undefined)it.resp=invGuessResp(it.name);if(it.qty===undefined||it.qty<1)it.qty=1;});
-  }
+  // inventory já processado via fbMergeById na linha acima — apenas normaliza campos opcionais
+  S.inventory.forEach(it=>{if(!it)return;if(it.resp===undefined)it.resp=invGuessResp(it.name);if(it.qty===undefined||it.qty<1)it.qty=1;});
   if(data.calDatas){
     const _rawCal=Array.isArray(data.calDatas)?data.calDatas:Object.values(data.calDatas);
-    if(_rawCal.length) S.calDatas=_rawCal.filter(x=>x!=null);
+    if(_rawCal.length) S.calDatas=fbMergeById(_rawCal.filter(x=>x!=null).map(x=>({...x,id:+x.id})), S.calDatas||[]);
   }
   if(data.docCats){
     const _rawDC=Array.isArray(data.docCats)?data.docCats:Object.values(data.docCats);
@@ -10428,7 +10444,8 @@ function cliCreateAgent(clientId){
     demandas:'',
     extras:'',
     historico:[],
-    docs:[]
+    docs:[],
+    updatedAt:new Date().toISOString()
   });
   save();
   // Navigate to agentes tab and open the new agent
@@ -11965,7 +11982,7 @@ function docSalvarModal(){
     if(idx>=0)S.docItems[idx]={...S.docItems[idx],nome,cat,desc,links,updatedAt:new Date().toISOString()};
   }else{
     const newId=S.docItems.length?Math.max(...S.docItems.map(x=>+x.id).filter(n=>Number.isFinite(n)))+1:1;
-    S.docItems.push({id:newId,nome,cat,desc,links,createdAt:new Date().toISOString()});
+    S.docItems.push({id:newId,nome,cat,desc,links,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
   }
   S._docModal=null;save();renderDocumentos();
 }
@@ -12264,8 +12281,8 @@ function calSalvarModal(){
   if(!nome||!mes||!dia){alert('Preencha nome, mês e dia.');return;}
   if(!S.calDatas)S.calDatas=[];
   const ed=S._calModal?.id;
-  if(ed){const idx=S.calDatas.findIndex(x=>+x.id===+ed);if(idx>=0)S.calDatas[idx]={...S.calDatas[idx],nome,mes,dia,nota};}
-  else{const newId=S.calDatas.length?Math.max(...S.calDatas.map(x=>+x.id).filter(n=>Number.isFinite(n)))+1:1;S.calDatas.push({id:newId,nome,mes,dia,nota});}
+  if(ed){const idx=S.calDatas.findIndex(x=>+x.id===+ed);if(idx>=0)S.calDatas[idx]={...S.calDatas[idx],nome,mes,dia,nota,updatedAt:new Date().toISOString()};}
+  else{const newId=S.calDatas.length?Math.max(...S.calDatas.map(x=>+x.id).filter(n=>Number.isFinite(n)))+1:1;S.calDatas.push({id:newId,nome,mes,dia,nota,updatedAt:new Date().toISOString()});}
   S._calModal=null;save();renderCalendario();
 }
 function calDelEmpresa(id){
