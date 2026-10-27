@@ -3019,7 +3019,7 @@ function invRespList(){
 
 function renderInventory(){
   if(!S.inventory)S.inventory=[];
-  const inv=S.inventory;
+  const inv=S.inventory.filter(x=>!x._deleted);
   const total=inv.length;
   const bom=inv.filter(i=>i.status==='bom').length;
   const estoque=inv.filter(i=>i.status==='estoque').length;
@@ -3157,7 +3157,7 @@ function invCommitObs(id){const el=document.getElementById('iobs-'+id);const it=
 function invCommitResp(id){const el=document.getElementById('iresp-'+id);const it=(S.inventory||[]).find(x=>+x.id===+id);if(it&&el){it.resp=el.value.trim();_invTouch(it);}S.editInvResp=null;save();renderInventory();}
 function invSetResp(id,val){const it=(S.inventory||[]).find(x=>+x.id===+id);if(!it)return;it.resp=val.trim();_invTouch(it);save();renderInventory();}
 function invSetGroup(g){S.invGroup=g;renderInventory();}
-function invDel(id){const it=(S.inventory||[]).find(x=>+x.id===+id);if(!it)return;if(!confirm('Remover "'+it.name+'" do inventário?'))return;S.inventory=S.inventory.filter(x=>+x.id!==+id);save();renderInventory();}
+function invDel(id){const it=(S.inventory||[]).find(x=>+x.id===+id);if(!it)return;if(!confirm('Remover "'+it.name+'" do inventário?'))return;it._deleted=true;it.updatedAt=new Date().toISOString();save();renderInventory();}
 function invAdd(){
   if(!S.inventory)S.inventory=[];
   const id=NID(S.inventory);
@@ -3959,11 +3959,12 @@ function delCli(id){
 
 /* ══════ ONBOARDING ══════ */
 function renderOnboarding(){
-  const n=S.onboarding.length;
+  const _ob=(S.onboarding||[]).filter(x=>!x._deleted);
+  const n=_ob.length;
   document.getElementById('ob-count').textContent=n+' cliente'+(n!==1?'s':'');
   const grid=document.getElementById('ob-grid');
   if(!n){grid.innerHTML=`<div class="empty-st"><i class="ti ti-rocket"></i><p>Nenhum cliente em onboarding.</p></div><button class="ob-add-btn" onclick="addOB()" style="margin-top:1rem"><i class="ti ti-plus" style="font-size:16px"></i> Novo cliente</button>`;return;}
-  grid.innerHTML=[...S.onboarding].sort((a,b)=>a.name.localeCompare(b.name,'pt')).map(o=>buildOBCard(o)).join('')
+  grid.innerHTML=[..._ob].sort((a,b)=>a.name.localeCompare(b.name,'pt')).map(o=>buildOBCard(o)).join('')
     +`<button class="ob-add-btn" onclick="addOB()"><i class="ti ti-plus" style="font-size:16px"></i> Novo cliente</button>`;
   if(S.editObName!==null){const el=document.getElementById(`obn-${S.editObName}`);if(el){el.focus();el.select();}}
 }
@@ -4005,7 +4006,7 @@ function buildOBCard(o){
 function _obTouch(o){o.updatedAt=new Date().toISOString();}
 function commitOBName(id){const inp=document.getElementById(`obn-${id}`);if(!inp)return;const o=S.onboarding.find(x=>+x.id===+id);if(o){o.name=inp.value.trim()||'Sem nome';_obTouch(o);}S.editObName=null;save();renderOnboarding();}
 function addOB(){const id=NID(S.onboarding);const now=new Date().toISOString();S.onboarding.push({id,name:'Novo cliente',steps:mkObSteps(),file:null,updatedAt:now});S.editObName=id;save();renderOnboarding();}
-function delOB(id){S.onboarding=S.onboarding.filter(x=>+x.id!==+id);save();renderOnboarding();}
+function delOB(id){const o=S.onboarding.find(x=>+x.id===+id);if(!o)return;o._deleted=true;o.updatedAt=new Date().toISOString();save();renderOnboarding();}
 function toggleObStep(obId,stepId){
   const o=S.onboarding.find(x=>+x.id===+obId);if(!o)return;
   const s=o.steps.find(x=>+x.id===+stepId);if(!s)return;
@@ -4057,7 +4058,7 @@ function funcAllGroups(){
 
 function renderFunc(){
   funcSyncAll(); // always sync before rendering
-  const all=S.funcionarios;
+  const all=(S.funcionarios||[]).filter(x=>!x._deleted);
   document.getElementById('func-count').textContent=all.length+' funcionário'+(all.length!==1?'s':'');
   const grid=document.getElementById('func-grid');
 
@@ -4211,9 +4212,9 @@ function autoAddToFuncionarios(name,roleLabel,teamRole,email){
 }
 function delFunc(id){
   if(!confirm('Remover este colaborador?'))return;
-  const f=S.funcionarios.find(x=>+x.id===+id);
-  const fname=(f?.name||'').toLowerCase();
-  S.funcionarios=S.funcionarios.filter(x=>+x.id!==+id);
+  const f=S.funcionarios.find(x=>+x.id===+id);if(!f)return;
+  const fname=(f.name||'').toLowerCase();
+  f._deleted=true;f.updatedAt=new Date().toISOString();
   S.sm =(S.sm ||[]).filter(m=>m.name.toLowerCase()!==fname);
   S.des=(S.des||[]).filter(m=>m.name.toLowerCase()!==fname);
   S.vm =(S.vm ||[]).filter(m=>m.name.toLowerCase()!==fname);
@@ -4279,10 +4280,11 @@ function renderThird(){
 }
 
 function renderLanc(){
-  const n=S.lancamentos.length;
+  const _lancs=(S.lancamentos||[]).filter(x=>!x._deleted);
+  const n=_lancs.length;
   document.getElementById('lanc-count').textContent=n+' lançamento'+(n!==1?'s':'');
   const grid=document.getElementById('lanc-grid');
-  grid.innerHTML=[...S.lancamentos].sort((a,b)=>(a.name||a.cliente||'').localeCompare(b.name||b.cliente||'','pt')).map(l=>buildLancCard(l)).join('')+`<button class="lanc-add-btn" onclick="addLanc()"><i class="ti ti-plus" style="font-size:16px"></i> Novo lançamento</button>`;
+  grid.innerHTML=[..._lancs].sort((a,b)=>(a.name||a.cliente||'').localeCompare(b.name||b.cliente||'','pt')).map(l=>buildLancCard(l)).join('')+`<button class="lanc-add-btn" onclick="addLanc()"><i class="ti ti-plus" style="font-size:16px"></i> Novo lançamento</button>`;
   if(S.editLancName!==null){const el=document.getElementById(`ln-${S.editLancName}`);if(el){el.focus();el.select();}}
 }
 
@@ -4313,9 +4315,10 @@ function renderAV(){
   }else{
     if(agView)agView.style.display='none';
     if(grid)grid.style.display='';
-    const n=S.audiovisual.length;
+    const _avList=(S.audiovisual||[]).filter(x=>!x._deleted);
+    const n=_avList.length;
     document.getElementById('av-count').textContent=n+' job'+(n!==1?'s':'');
-    grid.innerHTML=[...S.audiovisual].sort((a,b)=>a.name.localeCompare(b.name,'pt')).map(a=>buildAVCard(a)).join('')
+    grid.innerHTML=[..._avList].sort((a,b)=>a.name.localeCompare(b.name,'pt')).map(a=>buildAVCard(a)).join('')
       +`<button class="av-add-btn" onclick="addAV()"><i class="ti ti-plus" style="font-size:16px"></i> Novo job audiovisual</button>`;
     if(S.editAvField){const{id,field}=S.editAvField;const el=document.getElementById(`avf-${id}-${field}`);if(el){
     // Re-aplica valor salvo antes do re-render
@@ -4551,7 +4554,7 @@ function buildLancCard(l){
 function _lnTouch(l){l.updatedAt=new Date().toISOString();}
 function commitLN(id){const inp=document.getElementById(`ln-${id}`);if(!inp)return;const l=S.lancamentos.find(x=>+x.id===+id);if(l){l.name=inp.value.trim()||'Sem nome';_lnTouch(l);}S.editLancName=null;save();renderLanc();}
 function addLanc(){const id=NID(S.lancamentos);const now=new Date().toISOString();S.lancamentos.push({id,name:'Novo lançamento',delivs:mkDelivs(),updatedAt:now});S.editLancName=id;save();renderLanc();}
-function delLanc(id){if(!confirm('Remover este lançamento?'))return;S.lancamentos=S.lancamentos.filter(x=>+x.id!==+id);DELIVERABLES.forEach(d=>localStorage.removeItem(`ag9-lf-${id}-${d.key}`));save();renderLanc();}
+function delLanc(id){if(!confirm('Remover este lançamento?'))return;const l=S.lancamentos.find(x=>+x.id===+id);if(!l)return;l._deleted=true;l.updatedAt=new Date().toISOString();DELIVERABLES.forEach(d=>localStorage.removeItem(`ag9-lf-${id}-${d.key}`));save();renderLanc();}
 function cycleStat(lancId,key){const l=S.lancamentos.find(x=>+x.id===+lancId);if(!l)return;const d=l.delivs[key];if(d){d.status=STAT[d.status].next;_lnTouch(l);save();renderLanc();}}
 function setLF(lancId,key,field,val){const l=S.lancamentos.find(x=>+x.id===+lancId);if(l&&l.delivs[key]){l.delivs[key][field]=val;_lnTouch(l);save();}}
 
@@ -4729,7 +4732,7 @@ function delAV(id){
     setTimeout(()=>{btn.dataset.delConfirm='';btn.innerHTML=orig;btn.style.background='';btn.style.color='';btn.style.borderColor='';},2500);
     return;
   }
-  S.audiovisual=S.audiovisual.filter(x=>+x.id!==+id);
+  const av=S.audiovisual.find(x=>+x.id===+id);if(av){av._deleted=true;av.updatedAt=new Date().toISOString();}
   localStorage.removeItem('ag9-av-'+id);
   S.editAvField=null; // limpa campo ativo
   save();renderAV();
@@ -7369,8 +7372,8 @@ function fbMergeTerc(remote, local){
    Se o item tem updatedAt, vence o mais recente. Caso contrário vence o remoto. */
 function fbMergeById(remote, local){
   if(!Array.isArray(remote)) return local||[];
-  if(!Array.isArray(local)||!local.length) return remote.map(x=>x&&x.id!=null?{...x,id:+x.id}:x);
-  if(!remote.length) return local; // remoto vazio não apaga local
+  if(!Array.isArray(local)||!local.length) return remote.map(x=>x&&x.id!=null?{...x,id:+x.id}:x).filter(x=>!x||!x._deleted);
+  if(!remote.length) return local.filter(x=>!x||!x._deleted); // remoto vazio não apaga local; remove _deleted locais
 
   const byId={};
   // Começa com local (normaliza ids)
@@ -7381,18 +7384,18 @@ function fbMergeById(remote, local){
     const _rid=+ri.id; ri={...ri,id:_rid};
     const li=byId[_rid];
     if(!li){
-      byId[_rid]=ri; // novo do remoto — adiciona
+      if(!ri._deleted) byId[_rid]=ri; // novo do remoto — adiciona (ignora _deleted do remoto)
     } else {
       // Ambos têm — vence mais recente se tiver updatedAt; empate → local ganha
       const rT=ri.updatedAt?new Date(ri.updatedAt).getTime():0;
       const lT=li.updatedAt?new Date(li.updatedAt).getTime():0;
-      if(rT>lT) byId[_rid]=ri; // remoto inequivocamente mais recente
+      if(rT>lT) byId[_rid]=ri; // remoto inequivocamente mais recente (pode ser _deleted)
       // empate (rT===lT, inclusive ambos zero) ou local mais recente → mantém local
     }
   });
-  // Normaliza ids e deduplica (Firebase pode retornar ids string)
+  // Normaliza ids, deduplica e exclui itens marcados _deleted
   const _sb=new Set();
-  return Object.values(byId).filter(x=>x!=null&&!_sb.has(+x.id)&&_sb.add(+x.id)).map(t=>({
+  return Object.values(byId).filter(x=>x!=null&&!x._deleted&&!_sb.has(+x.id)&&_sb.add(+x.id)).map(t=>({
     ...t,
     assignees:(t.assignees||[]).filter(a=>a!=null).map(a=>({...a,id:+a.id}))
   }));
@@ -8344,7 +8347,8 @@ function addCtf(){
 }
 function delCtf(id){
   if(!confirm('Remover este contrato de funcionário?'))return;
-  S.ctfContratos=(S.ctfContratos||[]).filter(x=>+x.id!==+id);
+  const f=(S.ctfContratos||[]).find(x=>+x.id===+id);if(!f)return;
+  f._deleted=true;f.updatedAt=new Date().toISOString();
   localStorage.removeItem('coala-ctff-'+id);
   save();renderContratos();
 }
@@ -8388,8 +8392,8 @@ function rmCtfFile(id){
 /* ══ renderContratos com sub-abas ══ */
 function renderContratos(){
   const tab=S._ctTab||'func';
-  const nFunc=(S.ctfContratos||[]).length;
-  const nCliente=(S.contratos||[]).length;
+  const nFunc=(S.ctfContratos||[]).filter(x=>!x._deleted).length;
+  const nCliente=(S.contratos||[]).filter(x=>!x._deleted).length;
   const total=nFunc+nCliente;
   const ctCountEl=document.getElementById('ct-count');
   if(ctCountEl)ctCountEl.textContent = total + ' contrato'+(total!==1?'s':'');
@@ -8411,11 +8415,11 @@ function renderContratos(){
         <button class="ctf-add-btn" onclick="addCtf()" style="margin-top:1rem"><i class="ti ti-plus" style="font-size:16px"></i> Novo contrato de funcionário</button>`;
       return;
     }
-    grid.innerHTML=`<div class="ctf-grid">${(S.ctfContratos||[]).map(f=>buildCtfCard(f)).join('')}</div>
+    grid.innerHTML=`<div class="ctf-grid">${(S.ctfContratos||[]).filter(x=>!x._deleted).map(f=>buildCtfCard(f)).join('')}</div>
       <button class="ctf-add-btn" onclick="addCtf()" style="margin-top:1rem"><i class="ti ti-plus" style="font-size:16px"></i> Novo contrato de funcionário</button>`;
   } else {
     // ── Sub-aba Clientes ──
-    (S.contratos||[]).sort((a,b)=>(a.cliente||a.name||'').localeCompare(b.cliente||b.name||'','pt'));
+    (S.contratos||[]).filter(x=>!x._deleted).sort((a,b)=>(a.cliente||a.name||'').localeCompare(b.cliente||b.name||'','pt'));
     const needsSetup = !localStorage.getItem('coala-ejs-ok');
     const banner = needsSetup ? `<div class="ct-emailjs-banner">
       <i class="ti ti-mail"></i>
@@ -8428,7 +8432,7 @@ function renderContratos(){
         <button class="ct-add-btn" onclick="addContrato()" style="margin-top:1rem"><i class="ti ti-plus" style="font-size:16px"></i> Novo contrato</button>`;
       return;
     }
-    grid.innerHTML = banner + `<div class="ct-grid">${(S.contratos||[]).map(ct=>buildCtCard(ct)).join('')}
+    grid.innerHTML = banner + `<div class="ct-grid">${(S.contratos||[]).filter(x=>!x._deleted).map(ct=>buildCtCard(ct)).join('')}
       <button class="ct-add-btn" onclick="addContrato()"><i class="ti ti-plus" style="font-size:16px"></i> Novo contrato</button>
     </div>`;
   }
@@ -8547,7 +8551,8 @@ function addContrato(){
 }
 function delContrato(id){
   if(!confirm('Remover este contrato?'))return;
-  S.contratos=S.contratos.filter(x=>+x.id!==+id);
+  const ct=S.contratos.find(x=>+x.id===+id);if(!ct)return;
+  ct._deleted=true;ct.updatedAt=new Date().toISOString();
   save();renderContratos();
 }
 
@@ -8671,11 +8676,11 @@ let _senhaShow={}, _senhaEdit=null;
 function renderSenhas(){
   if(!S.senhas)S.senhas=[];
   const grid=document.getElementById('senhas-grid');if(!grid)return;
-  const total=S.senhas.length;
+  const total=S.senhas.filter(x=>!x._deleted).length;
   const cnt=document.getElementById('senhas-count');if(cnt)cnt.textContent=total+' '+(total===1?'acesso':'acessos');
   let html='<div class="senha-note"><i class="ti ti-shield-lock"></i> Estes acessos ficam visíveis para todos que entram no painel. Mantenha o acesso restrito à equipe.</div>';
   SENHAS_CATS.forEach(cat=>{
-    const items=S.senhas.filter(s=>s.cat===cat.key);
+    const items=S.senhas.filter(s=>s.cat===cat.key&&!s._deleted);
     html+=`<div class="senha-sec">
       <div class="senha-sec-hdr" style="border-color:${cat.color}">
         <span class="senha-sec-ic" style="background:${cat.color}"><i class="ti ${cat.icon}"></i></span>
@@ -8731,7 +8736,7 @@ function senhasAddTo(cat){
   save();renderSenhas();
 }
 function senhasUpd(id,field,val){const s=(S.senhas||[]).find(x=>+x.id===+id);if(!s)return;s[field]=val;s.updatedAt=new Date().toISOString();save();}
-function senhasDel(id){if(!confirm('Remover este acesso?'))return;S.senhas=(S.senhas||[]).filter(x=>+x.id!==+id);save();renderSenhas();}
+function senhasDel(id){if(!confirm('Remover este acesso?'))return;const s=(S.senhas||[]).find(x=>+x.id===+id);if(!s)return;s._deleted=true;s.updatedAt=new Date().toISOString();save();renderSenhas();}
 function senhasToggle(id){_senhaShow[id]=!_senhaShow[id];renderSenhas();}
 function senhasCopy(btn,id,field){
   const s=(S.senhas||[]).find(x=>+x.id===+id);if(!s)return;
@@ -8769,7 +8774,7 @@ function campSetMes(v){S.campFilterMes=(v===''||v==null)?null:parseInt(v,10);ren
 function campSetPrio(v){S.campFilterPrio=(S.campFilterPrio===v)?null:v;renderCampanha();}
 
 function renderCampanha(){
-  const all=S.campanhas||[];
+  const all=(S.campanhas||[]).filter(x=>!x._deleted);
   const n=all.length;
   document.getElementById('camp-count').textContent=n+' campanha'+(n!==1?'s':'');
   const grid=document.getElementById('camp-grid');
@@ -8955,7 +8960,8 @@ function addCampanhaTo(mes){
 }
 function delCampanha(id){
   if(!confirm('Remover esta campanha?'))return;
-  S.campanhas=(S.campanhas||[]).filter(x=>+x.id!==+id);
+  const cp=(S.campanhas||[]).find(x=>+x.id===+id);if(!cp)return;
+  cp._deleted=true;cp.updatedAt=new Date().toISOString();
   save();renderCampanha();
 }
 function _campTouch(cp){cp.updatedAt=new Date().toISOString();}
@@ -8997,6 +9003,7 @@ function renderAgentes(){
   const root=document.getElementById('agentes-root');
   if(!root)return;
   if(!S.agentes)S.agentes=[];
+  S.agentes=S.agentes.filter(x=>!x._deleted); // limpa deletados da memória
 
   const apiKey=localStorage.getItem('coala-api-key')||'';
   const keyBanner=!apiKey?`<div class="ag-key-banner">
@@ -9153,7 +9160,7 @@ function agBuildCfg(a){
 function agSelect(id){S._agenteCurrent=id;_agCfgOpen=false;renderAgentes();}
 function agToggleCfg(){_agCfgOpen=!_agCfgOpen;renderAgentes();}
 function agClear(id){const a=S.agentes.find(x=>+x.id===+id);if(!a)return;a.historico=[];a.updatedAt=new Date().toISOString();save();renderAgentes();}
-function agDel(id){if(!confirm('Remover este agente?'))return;S.agentes=S.agentes.filter(x=>+x.id!==+id);if(S._agenteCurrent===id)S._agenteCurrent=null;save();renderAgentes();}
+function agDel(id){if(!confirm('Remover este agente?'))return;const a=S.agentes.find(x=>+x.id===+id);if(!a)return;a._deleted=true;a.updatedAt=new Date().toISOString();if(S._agenteCurrent===id)S._agenteCurrent=null;save();renderAgentes();}
 
 function agOpenNew(){
   document.getElementById('modal-root').innerHTML=`
@@ -10472,7 +10479,7 @@ const FORN_CATS=[
 function renderForn(){
   const root=document.getElementById('forn-root');if(!root)return;
   if(!S.fornecedores)S.fornecedores=[];
-  const list=S.fornecedores;
+  const list=S.fornecedores.filter(x=>!x._deleted);
   const count=document.getElementById('forn-count');
   if(count)count.textContent=list.length+' contato'+(list.length===1?'':'s');
   if(!list.length){
@@ -10606,7 +10613,8 @@ function fornSave(editId){
 
 function fornDel(id){
   if(!confirm('Remover este fornecedor?'))return;
-  S.fornecedores=(S.fornecedores||[]).filter(x=>+x.id!==+id);
+  const f=(S.fornecedores||[]).find(x=>+x.id===+id);if(!f)return;
+  f._deleted=true;f.updatedAt=new Date().toISOString();
   save();renderForn();
 }
 
@@ -10624,7 +10632,7 @@ function renderInfluencers(){
   const root = document.getElementById('forn-root');
   if(!root) return;
   if(!S.influencers) S.influencers=[];
-  const list = S.influencers;
+  const list = S.influencers.filter(x=>!x._deleted);
 
   // Monta opções de clientes para o filtro
   const clienteOpts = (S.clients||[]).map(c=>
@@ -10791,7 +10799,8 @@ function inflSave(editId){
 
 function inflDel(id){
   if(!confirm('Remover este influencer?')) return;
-  S.influencers=(S.influencers||[]).filter(x=>+x.id!==+id);
+  const inf=(S.influencers||[]).find(x=>+x.id===+id);if(!inf)return;
+  inf._deleted=true;inf.updatedAt=new Date().toISOString();
   save(); renderInfluencers();
 }
 
@@ -10804,7 +10813,7 @@ function inflDel(id){
 function renderAtores(){
   const root=document.getElementById('forn-root');if(!root)return;
   if(!S.atores)S.atores=[];
-  const list=S.atores;
+  const list=S.atores.filter(x=>!x._deleted);
 
   root.innerHTML=`
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:1.5rem">
@@ -10919,7 +10928,8 @@ function atorSave(editId){
 
 function atorDel(id){
   if(!confirm('Remover este ator?')) return;
-  S.atores=(S.atores||[]).filter(x=>+x.id!==+id);
+  const at=(S.atores||[]).find(x=>+x.id===+id);if(!at)return;
+  at._deleted=true;at.updatedAt=new Date().toISOString();
   save(); renderAtores();
 }
 
@@ -11845,7 +11855,8 @@ function renderDocumentos(){
 
   const filCat=S._docFiltCat||null;
   const cats=S.docCats;
-  const items=filCat?S.docItems.filter(d=>d.cat===filCat):S.docItems;
+  const _docAll=(S.docItems||[]).filter(x=>!x._deleted);
+  const items=filCat?_docAll.filter(d=>d.cat===filCat):_docAll;
 
   // barra de categorias
   const catChips=cats.map(cat=>{
@@ -11961,7 +11972,8 @@ function docSalvarModal(){
 
 function docDel(id){
   if(!confirm('Remover este documento?'))return;
-  S.docItems=(S.docItems||[]).filter(x=>+x.id!==+id);
+  const d=S.docItems.find(x=>+x.id===+id);if(!d)return;
+  d._deleted=true;d.updatedAt=new Date().toISOString();
   save();renderDocumentos();
 }
 
@@ -12103,7 +12115,7 @@ const CAL_DATAS_FIXAS=[
 
 function calGetDatas(mes){
   const fixas=CAL_DATAS_FIXAS.filter(d=>d.mes===mes);
-  const empresa=(S.calDatas||[]).filter(d=>+d.mes===mes);
+  const empresa=(S.calDatas||[]).filter(d=>+d.mes===mes&&!d._deleted);
   return [...fixas,...empresa.map(d=>({...d,categoria:'empresa'}))].sort((a,b)=>a.dia-b.dia);
 }
 
@@ -12258,7 +12270,8 @@ function calSalvarModal(){
 }
 function calDelEmpresa(id){
   if(!confirm('Remover esta data?'))return;
-  S.calDatas=(S.calDatas||[]).filter(x=>+x.id!==+id);
+  const cd=(S.calDatas||[]).find(x=>+x.id===+id);if(!cd)return;
+  cd._deleted=true;cd.updatedAt=new Date().toISOString();
   save();renderCalendario();
 }
 
