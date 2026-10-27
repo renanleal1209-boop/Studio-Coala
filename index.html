@@ -3828,7 +3828,7 @@ function redesIcon(r){
 function updSvc(id,field,val){
   const cl=S.clients.find(x=>+x.id===+id);if(!cl)return;
   if(!cl.svc)cl.svc={redes:'',posts:'',pecas:'',meta:false,google:false};
-  cl.svc[field]=val;
+  cl.svc[field]=val;cl.updatedAt=new Date().toISOString();save();
   cl.updatedAt=new Date().toISOString(); // garante merge correto no Firebase
 }
 function toggleSvc(id,field){
@@ -3995,20 +3995,23 @@ function setObStepDate(obId,stepId,val){
 /* ══════ FUNCIONÁRIOS ══════ */
 function funcSyncAll(){
   // Single source of truth: push every team member into S.funcionarios with their teamRole
+  let _changed=false;
   const push=(name, teamRole, roleLabel)=>{
     if(!name)return;
     let f=S.funcionarios.find(x=>x.name.toLowerCase()===name.toLowerCase());
     if(!f){
-      f={id:NID(S.funcionarios),name,teamRole,role:roleLabel,salary:0,obs:'',contract:null,note:'',perf:'',_activeTab:'info'};
+      f={id:NID(S.funcionarios),name,teamRole,role:roleLabel,salary:0,obs:'',contract:null,note:'',perf:'',_activeTab:'info',updatedAt:new Date().toISOString()};
       S.funcionarios.push(f);
+      _changed=true;
     } else {
-      if(!f.teamRole)f.teamRole=teamRole;
+      if(!f.teamRole){f.teamRole=teamRole;_changed=true;}
     }
   };
   (S.sm  ||[]).forEach(m=>push(m.name,'sm',  'Social Media'));
   (S.des ||[]).forEach(m=>push(m.name,'des', 'Design'));
   (S.vm  ||[]).forEach(m=>push(m.name,'vm',  'Videomaker'));
   (S.extraTeam||[]).forEach(r=>r.members.forEach(m=>push(m.name, r.key, r.label)));
+  if(_changed)save();
 }
 
 function funcAllGroups(){
@@ -4462,7 +4465,7 @@ function updTotals(){
   const el=document.getElementById('fcx');if(el){el.textContent=BRL(res);el.className='val '+(res>0?'pos':res<0?'neg':'neu');}
 }
 
-function updFR(type,id,field,val){const md=S.fin[S.month];if(!md)return;const arr=md[type];if(!arr)return;const r=arr.find(x=>+x.id===+id);if(r)r[field]=val;}
+function updFR(type,id,field,val){const md=S.fin[S.month];if(!md)return;const arr=md[type];if(!arr)return;const r=arr.find(x=>+x.id===+id);if(r){r[field]=val;r.updatedAt=new Date().toISOString();save();}}
 function delFR(type,id){const md=S.fin[S.month];if(!md)return;if(!md[type])return;md[type]=md[type].filter(r=>+r.id!==+id);save();renderFin();}
 
 
@@ -4513,7 +4516,7 @@ function commitLN(id){const inp=document.getElementById(`ln-${id}`);if(!inp)retu
 function addLanc(){const id=NID(S.lancamentos);const now=new Date().toISOString();S.lancamentos.push({id,name:'Novo lançamento',delivs:mkDelivs(),updatedAt:now});S.editLancName=id;save();renderLanc();}
 function delLanc(id){if(!confirm('Remover este lançamento?'))return;S.lancamentos=S.lancamentos.filter(x=>+x.id!==+id);DELIVERABLES.forEach(d=>localStorage.removeItem(`ag9-lf-${id}-${d.key}`));save();renderLanc();}
 function cycleStat(lancId,key){const l=S.lancamentos.find(x=>+x.id===+lancId);if(!l)return;const d=l.delivs[key];if(d){d.status=STAT[d.status].next;_lnTouch(l);save();renderLanc();}}
-function setLF(lancId,key,field,val){const l=S.lancamentos.find(x=>+x.id===+lancId);if(l&&l.delivs[key]){l.delivs[key][field]=val;_lnTouch(l);}}
+function setLF(lancId,key,field,val){const l=S.lancamentos.find(x=>+x.id===+lancId);if(l&&l.delivs[key]){l.delivs[key][field]=val;_lnTouch(l);save();}}
 
 function buildAVCard(a){
   const ef=S.editAvField;const isE=f=>ef&&ef.id===a.id&&ef.field===f;
@@ -8310,7 +8313,7 @@ function delCtf(id){
 }
 function updCtf(id,field,val){
   const f=(S.ctfContratos||[]).find(x=>+x.id===+id);if(!f)return;
-  f[field]=val;f.updatedAt=new Date().toISOString();
+  f[field]=val;f.updatedAt=new Date().toISOString();save();
 }
 function upCtfFile(id,inp){
   const file=inp.files[0];if(!file)return;
@@ -8513,7 +8516,7 @@ function delContrato(id){
 
 function updCt(id,field,val){
   const ct=S.contratos.find(x=>+x.id===+id);if(!ct)return;
-  ct[field]=val;_ctTouch(ct);
+  ct[field]=val;_ctTouch(ct);save();
 }
 function toggleCtNotif(id){
   const ct=S.contratos.find(x=>+x.id===+id);if(!ct)return;
@@ -8686,11 +8689,11 @@ function buildSenhaCard(s){
 function senhasAddTo(cat){
   if(!S.senhas)S.senhas=[];
   const id=S.senhas.length?Math.max(...S.senhas.map(x=>+x.id).filter(n=>Number.isFinite(n)))+1:1;
-  S.senhas.push({id,cat,label:'',login:'',senha:'',url:'',obs:''});
+  S.senhas.push({id,cat,label:'',login:'',senha:'',url:'',obs:'',updatedAt:new Date().toISOString()});
   _senhaEdit=id;
   save();renderSenhas();
 }
-function senhasUpd(id,field,val){const s=(S.senhas||[]).find(x=>+x.id===+id);if(!s)return;s[field]=val;save();}
+function senhasUpd(id,field,val){const s=(S.senhas||[]).find(x=>+x.id===+id);if(!s)return;s[field]=val;s.updatedAt=new Date().toISOString();save();}
 function senhasDel(id){if(!confirm('Remover este acesso?'))return;S.senhas=(S.senhas||[]).filter(x=>+x.id!==+id);save();renderSenhas();}
 function senhasToggle(id){_senhaShow[id]=!_senhaShow[id];renderSenhas();}
 function senhasCopy(btn,id,field){
@@ -8921,7 +8924,7 @@ function delCampanha(id){
 function _campTouch(cp){cp.updatedAt=new Date().toISOString();}
 function updCamp(id,field,val){
   const cp=(S.campanhas||[]).find(x=>+x.id===+id);if(!cp)return;
-  cp[field]=val;_campTouch(cp);
+  cp[field]=val;_campTouch(cp);save();
 }
 function commitCampName(id){
   const inp=document.getElementById('campn-'+id);if(!inp)return;
@@ -8934,7 +8937,7 @@ function upCampApres(id,inp){
   r.onload=ev=>{
     const cp=(S.campanhas||[]).find(x=>+x.id===+id);if(!cp)return;
     cp.apres={name:file.name,data:ev.target.result,type:file.type};
-    save();renderCampanha();
+    _campTouch(cp);save();renderCampanha();
   };
   r.readAsDataURL(file);
 }
