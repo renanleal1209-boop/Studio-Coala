@@ -2949,7 +2949,10 @@ function go(tab){
   if(tab==='calendario') renderCalendario();
   if(tab==='documentos') renderDocumentos();
   if(tab==='panorama'){if(!window._panUnlocked){showPanoramaLock();return;}renderPanorama();}
-  if(tab==='contratos') renderContratos();
+  if(tab==='contratos'){
+    if(!window._contratosUnlocked){showContratosLock();return;}
+    renderContratos();
+  }
   if(tab==='home') renderHome();
   if(tab==='fornecedores') { _fornSubTab='forn'; renderForn(); renderAtores&&null; }
   if(tab==='funcionarios'){
@@ -3336,6 +3339,35 @@ function checkSenhasLock(){
 function toggleSenhasLockEye(){
   const inp=document.getElementById('senhas-lock-inp');
   const ico=document.getElementById('senhas-lock-eye-icon');
+  if(!inp||!ico)return;
+  inp.type=inp.type==='password'?'text':'password';
+  ico.className=inp.type==='password'?'ti ti-eye':'ti ti-eye-off';
+}
+function showContratosLock(){
+  const pane=document.getElementById('pane-contratos');
+  if(!pane) return;
+  pane.innerHTML=`<div class="lock-overlay" style="position:relative;min-height:300px;display:flex;align-items:center;justify-content:center">
+    <div class="lock-box">
+      <i class="ti ti-file-certificate" style="font-size:32px;color:var(--primary);margin-bottom:8px"></i>
+      <div class="lock-sub">Digite a senha para acessar Contratos</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="contratos-lock-inp" class="lock-inp" type="password" placeholder="Senha..." autocomplete="off"
+          onkeydown="if(event.key==='Enter')checkContratosLock()" />
+        <button class="lock-eye" onclick="toggleContratosLockEye()" tabindex="-1"><i class="ti ti-eye" id="contratos-lock-eye-icon"></i></button>
+      </div>
+      <button class="lock-btn" onclick="checkContratosLock()">Entrar</button>
+    </div>
+  </div>`;
+  document.getElementById('contratos-lock-inp')?.focus();
+}
+function checkContratosLock(){
+  const v=(document.getElementById('contratos-lock-inp')?.value||'').trim();
+  if(v==='#Dudu@2026'){window._contratosUnlocked=true;go('contratos');}
+  else{const el=document.getElementById('contratos-lock-inp');if(el){el.value='';el.style.borderColor='#ef4444';setTimeout(()=>el.style.borderColor='',800);el.focus();}}
+}
+function toggleContratosLockEye(){
+  const inp=document.getElementById('contratos-lock-inp');
+  const ico=document.getElementById('contratos-lock-eye-icon');
   if(!inp||!ico)return;
   inp.type=inp.type==='password'?'text':'password';
   ico.className=inp.type==='password'?'ti ti-eye':'ti ti-eye-off';
