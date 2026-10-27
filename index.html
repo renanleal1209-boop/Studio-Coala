@@ -4159,19 +4159,23 @@ function funcSetTeamRole(id,teamRole){
 function setFuncPerf(id,perf){
   const f=S.funcionarios.find(x=>+x.id===+id);if(!f)return;
   f.perf=f.perf===perf?'':perf;
+  f.updatedAt=new Date().toISOString();
   save();renderFunc();
 }
 function autoAddToFuncionarios(name,roleLabel,teamRole,email){
   if(!name)return;
   let f=S.funcionarios.find(x=>x.name.toLowerCase()===name.toLowerCase());
+  let _changed=false;
   if(!f){
-    f={id:NID(S.funcionarios),name,email:email||'',teamRole:teamRole||'',role:roleLabel||'',salary:0,obs:'',contract:null,note:'',perf:'',_activeTab:'info'};
+    f={id:NID(S.funcionarios),name,email:email||'',teamRole:teamRole||'',role:roleLabel||'',salary:0,obs:'',contract:null,note:'',perf:'',_activeTab:'info',updatedAt:new Date().toISOString()};
     S.funcionarios.push(f);
+    _changed=true;
   } else {
-    if(teamRole&&!f.teamRole)f.teamRole=teamRole;
-    if(roleLabel&&!f.role)f.role=roleLabel;
-    if(email&&!f.email)f.email=email;
+    if(teamRole&&!f.teamRole){f.teamRole=teamRole;_changed=true;}
+    if(roleLabel&&!f.role){f.role=roleLabel;_changed=true;}
+    if(email&&!f.email){f.email=email;_changed=true;}
   }
+  if(_changed){f.updatedAt=new Date().toISOString();save();}
 }
 function delFunc(id){
   if(!confirm('Remover este colaborador?'))return;
@@ -4197,6 +4201,7 @@ function commitFF(id,field){
   else v=v.trim();
   if(field==='name'&&!v){S.editFuncField=null;renderFunc();return;}
   f[field]=v;
+  f.updatedAt=new Date().toISOString();
   S.editFuncField=null;
   if(field==='salary')syncFolhaSalarial();
   save();renderFunc();
@@ -5084,7 +5089,7 @@ function doEditCli(id){
 }
 function doAddFunc(){
   const name=document.getElementById('mi').value.trim();if(!name)return;
-  S.funcionarios.push({id:NID(S.funcionarios),name,role:document.getElementById('mi2').value.trim(),salary:parseFloat(document.getElementById('mi3').value)||0,obs:document.getElementById('mi4').value.trim(),contract:null});
+  S.funcionarios.push({id:NID(S.funcionarios),name,role:document.getElementById('mi2').value.trim(),salary:parseFloat(document.getElementById('mi3').value)||0,obs:document.getElementById('mi4').value.trim(),contract:null,updatedAt:new Date().toISOString()});
   closeM();save();renderFunc();
 }
 
@@ -8123,9 +8128,9 @@ function rmJobFile(sec,id){const j=(S.terceirizados[sec]||[]).find(x=>+x.id===+i
 function upLancFile(lancId,key,inp){const file=inp.files[0];if(!file)return;universalUpload(file,'lanc',fo=>{const l=S.lancamentos.find(x=>+x.id===+lancId);if(!l)return;l.delivs[key].file=fo;save();renderLanc();});}
 function dlLancFile(lancId,key){const l=S.lancamentos.find(x=>+x.id===+lancId);if(!l)return;const f=l.delivs[key]?.file;if(!f)return;const a=document.createElement('a');a.href=fileURL(f);a.download=f.name;a.click();}
 function rmLancFile(lancId,key){const l=S.lancamentos.find(x=>+x.id===+lancId);if(!l)return;l.delivs[key].file=null;save();renderLanc();}
-function upObFile(id,inp){const file=inp.files[0];if(!file)return;universalUpload(file,'ob',fo=>{const o=S.onboarding.find(x=>+x.id===+id);if(!o)return;o.file=fo;save();renderOnboarding();});}
+function upObFile(id,inp){const file=inp.files[0];if(!file)return;universalUpload(file,'ob',fo=>{const o=S.onboarding.find(x=>+x.id===+id);if(!o)return;o.file=fo;_obTouch(o);save();renderOnboarding();});}
 function dlObFile(id){const o=S.onboarding.find(x=>+x.id===+id);if(!o?.file)return;const a=document.createElement('a');a.href=fileURL(o.file);a.download=o.file.name;a.click();}
-function rmObFile(id){const o=S.onboarding.find(x=>+x.id===+id);if(!o)return;o.file=null;save();renderOnboarding();}
+function rmObFile(id){const o=S.onboarding.find(x=>+x.id===+id);if(!o)return;o.file=null;_obTouch(o);save();renderOnboarding();}
 function upAV(id,inp){const file=inp.files[0];if(!file)return;universalUpload(file,'av',fo=>{const a=S.audiovisual.find(x=>+x.id===+id);if(!a)return;a.file=fo;a.updatedAt=new Date().toISOString();save();renderAV();});}
 function dlAV(id){const a=S.audiovisual.find(x=>+x.id===+id);if(!a?.file)return;const el=document.createElement('a');el.href=fileURL(a.file);el.download=a.file.name;el.click();}
 function rmAVFile(id){const a=S.audiovisual.find(x=>+x.id===+id);if(!a)return;a.file=null;a.updatedAt=new Date().toISOString();save();renderAV();}
@@ -9162,7 +9167,7 @@ function agUploadDocs(id,inp){
 }
 function agDelDoc(id,idx){
   const a=S.agentes.find(x=>+x.id===+id);if(!a||!a.docs)return;
-  a.docs.splice(idx,1);save();renderAgentes();
+  a.docs.splice(idx,1);a.updatedAt=new Date().toISOString();save();renderAgentes();
 }
 function agSaveCfg(id){
   const a=S.agentes.find(x=>+x.id===+id);if(!a)return;
@@ -9199,6 +9204,7 @@ async function agSend(id){
   const now=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   if(!a.historico)a.historico=[];
   a.historico.push({role:'user',content:prompt,time:now});
+  a.updatedAt=new Date().toISOString();
   inp.value='';inp.style.height='auto';
   _agTyping=true;
   save();renderAgentes();
@@ -9249,6 +9255,7 @@ Use o tom, estilo e preferências da marca rigorosamente.`;
     const reply=data.content?.[0]?.text||'Não consegui gerar a legenda. Tente novamente.';
     const replyTime=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     a.historico.push({role:'assistant',content:reply,time:replyTime});
+    a.updatedAt=new Date().toISOString();
   }catch(err){
     a.historico.push({role:'assistant',content:`Erro: ${err.message}\n\nVerifique sua API Key nas configurações.`,time:now});
   }finally{
