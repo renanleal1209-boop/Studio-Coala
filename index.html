@@ -2759,12 +2759,14 @@ function load(){
 async function fbPushClients(){
   if(!_syncUrl||!_idToken) return;
   try{
-    const clients=(S.clients||[]).filter(c=>c&&c.id!=null&&!c._deleted);
+    const clients=(S.clients||[]).filter(c=>c&&c.id!=null);
     if(!clients.length) return;
     await Promise.allSettled(
       clients.map(c=>{
-        const toSend={...c,kv:null,joey:null,
-          updatedAt:c.updatedAt||new Date().toISOString()};
+        // Clientes deletados: envia apenas tombstone (não expõe dados)
+        const toSend=c._deleted
+          ?{id:c.id,_deleted:true,updatedAt:c.updatedAt||new Date().toISOString()}
+          :{...c,kv:null,joey:null,updatedAt:c.updatedAt||new Date().toISOString()};
         return fetch(withAuth(_syncUrl+'/clientsData/clients/'+c.id+'.json'),{
           method:'PUT', mode:'cors', cache:'no-store',
           headers:{'Content-Type':'application/json'},
@@ -2772,7 +2774,8 @@ async function fbPushClients(){
         });
       })
     );
-    addSyncLog('sync','Clientes salvos individualmente ('+clients.length+')');
+    const _active=clients.filter(c=>!c._deleted).length;
+    addSyncLog('sync','Clientes salvos individualmente ('+_active+' ativos)');
   }catch(e){
     addSyncLog('warn','fbPushClients erro: '+e.message);
   }
@@ -3932,28 +3935,31 @@ function setSt(id,st){const c=S.clients.find(x=>+x.id===+id);if(c){const lbl={no
 function delCli(id){
   const c=S.clients.find(x=>+x.id===+id);if(!c)return;
   const nm=c.name||'Cliente';
-  // Registra ID deletado no LS para que merge não readicione
+  // Tombstone: marca _deleted + updatedAt para que fbMergeClients propague a remoção
+  c._deleted=true;
+  c.updatedAt=new Date().toISOString();
+  // Registra ID deletado no LS (fallback extra)
   try{
     let deleted=JSON.parse(localStorage.getItem('ag9-deleted-clients')||'[]');
     if(!deleted.includes(+id)) deleted.push(+id);
     localStorage.setItem('ag9-deleted-clients',JSON.stringify(deleted));
   }catch(e){}
-  // Remove da memória local
-  S.clients=S.clients.filter(x=>+x.id!==+id);
   localStorage.removeItem('ag9-kv-'+id);
   localStorage.removeItem('ag9-joey-'+id);
   save();
-  syncClientsToRec();
-  renderClients();
-  // DELETE no Firebase
+  // Envia o tombstone ao Firebase via PATCH (garante que outros dispositivos recebam _deleted:true)
   if(_syncUrl&&_idToken){
     ensureToken().then(()=>{
       if(!_idToken) return;
       fetch(withAuth(_syncUrl+'/clientsData/clients/'+id+'.json'),{
-        method:'DELETE', mode:'cors', cache:'no-store'
-      }).catch(e=>addSyncLog('warn','Erro ao deletar cliente do Firebase: '+e.message));
+        method:'PATCH', mode:'cors', cache:'no-store',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({_deleted:true,updatedAt:c.updatedAt})
+      }).catch(e=>addSyncLog('warn','Erro ao marcar cliente deletado no Firebase: '+e.message));
     });
   }
+  syncClientsToRec();
+  renderClients();
   notifBroadcastClient({id,name:nm},'client_removed','');
 }
 
